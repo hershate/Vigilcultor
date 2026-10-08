@@ -194,6 +194,33 @@ class InstallationClient:
         rows = response.json()
         return [row for row in rows if "pull_request" not in row]
 
+    def get_issue(self, full_name: str, issue_number: int) -> dict:
+        response = self._client.get(
+            f"/repos/{full_name}/issues/{issue_number}", headers=self._headers()
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_pull_request(
+        self, full_name: str, *, title: str, body: str, head: str, base: str
+    ) -> dict:
+        response = self._client.post(
+            f"/repos/{full_name}/pulls",
+            json={"title": title, "body": body, "head": head, "base": base},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_issue_comment(self, full_name: str, issue_number: int, body: str) -> dict:
+        response = self._client.post(
+            f"/repos/{full_name}/issues/{issue_number}/comments",
+            json={"body": body},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
 
 class CachedInstallationToken:
     """Thread-safe installation token with renewal margin."""
