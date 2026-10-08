@@ -30,8 +30,9 @@ scripts/build-executor.sh
 (cd dist && sha256sum vigilcultor-*.whl rusty-code-linux-x86_64 > SHA256SUMS)
 
 echo "==> 发布 ${TAG}"
+# 先推 tag 再建 Release：gh 拒绝基于未推送 tag 的 release（v0.1.1 教训）
+git push origin "${TAG}"
 gh release create "${TAG}" dist/vigilcultor-*.whl \
     dist/rusty-code-linux-x86_64 dist/SHA256SUMS \
-    --title "Vigilcultor ${TAG}" --generate-notes
-git push origin "${TAG}"
+    --title "Vigilcultor ${TAG}" --generate-notes --latest
 echo "==> 完成"
