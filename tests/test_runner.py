@@ -48,6 +48,20 @@ class FakeClient:
     def __init__(self):
         self.comments: list[str] = []
         self.prs: list[dict] = []
+        self.pr_state = {"state": "open", "merged": False}
+        self.pr_feedback = []
+
+    def get_pull_request(self, full_name, number):
+        return {"number": number, "head": {"sha": "abc123"}, **self.pr_state}
+
+    def list_pr_comments(self, full_name, number):
+        return self.pr_feedback
+
+    def list_pr_reviews(self, full_name, number):
+        return []
+
+    def list_check_runs(self, full_name, ref):
+        return [{"name": "ci", "conclusion": "failure", "output": {"summary": "断言失败"}}]
 
     @property
     def token(self):
@@ -61,7 +75,7 @@ class FakeClient:
 
     def create_pull_request(self, full_name, *, title, body, head, base):
         self.prs.append({"title": title, "head": head, "base": base})
-        return {"html_url": f"https://github.com/{full_name}/pull/7"}
+        return {"html_url": f"https://github.com/{full_name}/pull/7", "number": 7}
 
     def create_issue_comment(self, full_name, number, body):
         self.comments.append(body)
@@ -110,6 +124,13 @@ def _wire(monkeypatch, client, podman, dest):
     monkeypatch.setattr(endpoint, "container_proxy_url", lambda: None)
 
 
+def _mark_running(task_id):
+    """生产路径先 claim（queued→running），测试直呼 run_task 前对齐状态。"""
+    with get_session_maker()() as session:
+        session.get(Task, task_id).state = "running"
+        session.commit()
+
+
 def _task_state(task_id):
     with get_session_maker()() as session:
         return session.get(Task, task_id).state
@@ -130,16 +151,19 @@ def test_happy_path_creates_pr_and_comment(tmp_env, monkeypatch):
     _wire(monkeypatch, client, pod, tmp_env)
     monkeypatch.setattr(runner, "_push_branch", lambda dest, branch, token: True)
 
+    _mark_running(task_id)
     runner.run_task(task_id, podman=pod)
 
-    assert _task_state(task_id) == "completed"
+    assert _task_state(task_id) == "in_review"
     row = _run_row(task_id)
-    assert row.exit_status == "completed"
+    assert row.exit_status == "in_review"
     assert row.agent_session_id == "sess-1"
     assert (row.input_tokens, row.output_tokens) == (100, 40)
     assert row.pr_url and row.pr_url.endswith("/pull/7")
     assert client.prs[0]["head"] == f"vgc/task-{task_id}"
-    assert any("已完成处理" in c for c in client.comments)
+    assert any("进入迭代直至合入" in c for c in client.comments)
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).pr_number == 7
     # 容器调用：agent 一次 + 门禁一次（test）
     task_runs = [c for c in pod.calls if c[0].startswith("vgc-task-")]
     gate_runs = [c for c in pod.calls if c[0].startswith("vgc-gate-")]
@@ -147,10 +171,14 @@ def test_happy_path_creates_pr_and_comment(tmp_env, monkeypatch):
 
 
 def test_gate_failure_blocks_pr(tmp_env, monkeypatch):
+    from vigilcultor.store.kv import kv_set
+
+    kv_set("tasks:retry_max", 0)  # 测试终态：关闭自动重试
     task_id = seed(tmp_env, monkeypatch)
     client, pod = FakeClient(), FakePodman(gate_ok=False)
     _wire(monkeypatch, client, pod, tmp_env)
 
+    _mark_running(task_id)
     runner.run_task(task_id, podman=pod)
 
     assert _task_state(task_id) == "failed"
@@ -160,6 +188,9 @@ def test_gate_failure_blocks_pr(tmp_env, monkeypatch):
 
 
 def test_agent_failure_marks_failed(tmp_env, monkeypatch):
+    from vigilcultor.store.kv import kv_set
+
+    kv_set("tasks:retry_max", 0)
     task_id = seed(tmp_env, monkeypatch)
     client = FakeClient()
 
@@ -168,6 +199,7 @@ def test_agent_failure_marks_failed(tmp_env, monkeypatch):
             return RunResult([], 1, "garbage", "boom")
 
     _wire(monkeypatch, client, BrokenPod(), tmp_env)
+    _mark_running(task_id)
     runner.run_task(task_id, podman=BrokenPod())
     assert _task_state(task_id) == "failed"
     assert any("处理失败" in c for c in client.comments)
@@ -208,3 +240,93 @@ def test_run_pending_single_flight(tmp_env, monkeypatch):
     import time
     time.sleep(0.1)
     assert started == [task_id]
+
+
+def test_failure_retries_then_fails_after_max(tmp_env, monkeypatch):
+    task_id = seed(tmp_env, monkeypatch)
+    client = FakeClient()
+
+    class BrokenPod(FakePodman):
+        def run(self, name, image, command, **kwargs):
+            self.calls.append((name, list(command)))
+            return RunResult([], 1, "garbage", "boom")
+
+    pod = BrokenPod()
+    _wire(monkeypatch, client, pod, tmp_env)
+
+    _mark_running(task_id)
+    runner.run_task(task_id, podman=pod)  # 第 1 次：重试（默认上限 2）
+    assert _task_state(task_id) == "queued"
+    _mark_running(task_id)
+    runner.run_task(task_id, podman=pod)  # 第 2 次：仍重试
+    assert _task_state(task_id) == "queued"
+    _mark_running(task_id)
+    runner.run_task(task_id, podman=pod)  # 第 3 次：超限终态
+    assert _task_state(task_id) == "failed"
+    with get_session_maker()() as session:
+        runs = session.scalars(
+            __import__("sqlalchemy").select(TaskRun.id).where(TaskRun.task_id == task_id)
+        ).all()
+    assert len(runs) == 3
+
+
+def test_pr_iteration_resumes_session_with_feedback(tmp_env, monkeypatch):
+    task_id = seed(tmp_env, monkeypatch)
+    client, pod = FakeClient(), FakePodman()
+    client.pr_feedback = [
+        {"user": {"login": "alice"}, "body": "请补一个测试", "created_at": "2999-01-01T00:00:00Z"}
+    ]
+    _wire(monkeypatch, client, pod, tmp_env)
+    monkeypatch.setattr(runner, "_push_branch", lambda dest, branch, token: True)
+    with get_session_maker()() as session:
+        task = session.get(Task, task_id)
+        task.pr_number = 7  # 已有 PR → 迭代轮
+        session.commit()
+
+    captured: dict = {}
+
+    def fake_run(name, image, command, **kwargs):
+        if name.startswith("vgc-task-"):  # 只捕获 agent 容器（门禁是另一容器）
+            captured["command"] = command
+            captured["volumes"] = kwargs.get("volumes")
+        return FakePodman.run(FakePodman(), name, image, command, **kwargs)
+
+    class SpyPod(FakePodman):
+        def run(self, name, image, command, **kwargs):
+            return fake_run(name, image, command, **kwargs)
+
+    _mark_running(task_id)
+    runner.run_task(task_id, podman=SpyPod())
+
+    argv = " ".join(captured["command"])
+    assert "--resume" not in argv  # 首次运行无历史会话
+    assert _task_state(task_id) == "in_review"
+
+    # 二次迭代：携带反馈上下文并 --resume 上次会话
+    task2 = None
+    with get_session_maker()() as session:
+        task2 = session.get(Task, task_id)
+        task2.state = "queued"  # dispatch 续接后重新入队
+        session.commit()
+    captured.clear()
+    _mark_running(task_id)
+    runner.run_task(task_id, podman=SpyPod())
+    argv = " ".join(captured["command"])
+    assert "--resume" in argv
+    assert argv.index("--resume") < argv.index("--resume") + 3  # 形参存在
+    i = argv.index("--resume")
+    del i
+    # 反馈进入系统提示（拼进 argv 的 append-system-prompt 值）
+    assert "请补一个测试" in argv or "请补一个测试" in str(captured["command"])
+    assert "CI 失败" in str(captured["command"])
+
+
+def test_finish_does_not_overwrite_cancelled(tmp_env, monkeypatch):
+    """取消后运行收尾回写不得覆盖人工终态（竞态守卫）。"""
+    task_id = seed(tmp_env, monkeypatch)
+    run = runner._new_run(task_id)
+    with get_session_maker()() as session:
+        session.get(Task, task_id).state = "cancelled"
+        session.commit()
+    runner._finish(run, task_id, "completed")
+    assert _task_state(task_id) == "cancelled"

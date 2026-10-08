@@ -10,11 +10,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import threading
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from vigilcultor.agent import compat, driver, executor, prompts
 from vigilcultor.containers.imagegen import container_tag, runtime_setup
@@ -22,7 +23,10 @@ from vigilcultor.containers.onboard import clone_dir_for, real_cloner
 from vigilcultor.containers.podman import Podman
 from vigilcultor.containers.profile import EnvProfile
 from vigilcultor.store.db import get_session_maker
+from vigilcultor.store.kv import kv_get
 from vigilcultor.store.models import Project, Task, TaskRun
+
+logger = logging.getLogger(__name__)
 
 LOG_TAIL_CHARS = 4000
 EXECUTOR_CONTAINER_PATH = "/usr/local/bin/rusty-code"
@@ -51,11 +55,17 @@ def claim_next_task() -> int | None:
 
 
 def run_pending_tasks() -> int:
-    """单飞执行：同一时刻至多一个任务在跑；返回本轮启动的任务数。"""
+    """单飞执行：抢占检查 → 领取 → 后台执行；返回本轮启动的任务数。"""
     global _running
     with _running_lock:
         if _running:
             return 0
+        from vigilcultor.orchestrator.intervene import preempt_if_needed
+
+        try:
+            preempt_if_needed()
+        except Exception:  # noqa: BLE001 - 抢占失败不阻塞领取
+            logger.warning("preemption check failed", exc_info=True)
         task_id = claim_next_task()
         if task_id is None:
             return 0
@@ -131,7 +141,7 @@ def _push_branch(dest, branch: str, token: str) -> bool:
 
 
 def run_task(task_id: int, *, podman: Podman | None = None) -> None:
-    """执行一个任务的完整单迭代流程，落地 TaskRun 与任务状态。"""
+    """执行一次迭代：issue 首迭代或 PR 反馈续接（--resume），落地 TaskRun。"""
     from vigilcultor.gh import service
 
     podman = podman or Podman()
@@ -143,6 +153,7 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
         full_name, installation_id = project.full_name, project.installation_id
         issue_number, profile_json = task.issue_number, project.env_profile_json
         budget_usd = task.budget_usd / 100
+        pr_number = task.pr_number
     run = _new_run(task_id)
 
     client = service.installation_client_for(installation_id)
@@ -165,9 +176,20 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
         issue = client.get_issue(full_name, issue_number)
     except Exception as exc:  # noqa: BLE001
         return _finish(run, task_id, "failed", error=f"issue_fetch_failed: {exc}")
+    feedback, pr_done = _pr_feedback(client, full_name, task_id, pr_number)
+    if pr_done is not None:
+        # PR 已被人工合入/关闭：dispatch 正常会先到，这里兜底终态
+        return _finish(run, task_id, "completed", error=pr_done)
     system_prompt = prompts.assemble_system_prompt(
-        prompts.PromptLayers(issue_title=issue.get("title"), issue_body=issue.get("body"))
+        prompts.PromptLayers(
+            issue_title=issue.get("title"),
+            issue_body=issue.get("body"),
+            extra_context=feedback,
+        )
     )
+    prompt = prompts.task_user_message()
+    if feedback:
+        prompt = prompts.iteration_user_message()
 
     # 3) 容器内执行 agent（工作区可写挂载，执行器与会话目录隔离挂载）
     from vigilcultor.netproxy.endpoint import container_proxy_url
@@ -175,8 +197,9 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
     sessions_dir = dest.parent / (dest.name + ".sessions")
     sessions_dir.mkdir(parents=True, exist_ok=True)
     request = driver.AgentRequest(
-        prompt=prompts.task_user_message(),
+        prompt=prompt,
         system_prompt=system_prompt,
+        resume_session=_last_session_id(task_id),
         budget_usd=budget_usd or None,
         model=provider.get("model") or None,
     )
@@ -212,7 +235,7 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
             client, full_name, issue_number,
             f"处理失败：agent 执行未完成。\n\n{(outcome.final_text or outcome.tail)[-800:]}",
         )
-        return _finish(run, task_id, "failed", error=f"agent_failed:exit={agent_result.returncode}")
+        return _fail(run, task_id, f"agent_failed:exit={agent_result.returncode}")
 
     # 4) 门禁：独立容器按两段式跑构建/测试
     for kind, command in gate_commands(profile_json):
@@ -225,7 +248,7 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
         if not gate.ok:
             tail = (gate.stdout + gate.stderr)[-600:]
             _comment(client, full_name, issue_number, f"门禁未通过（{kind}）：\n```\n{tail}\n```")
-            return _finish(run, task_id, "failed", error=f"gate_failed:{kind}")
+            return _fail(run, task_id, f"gate_failed:{kind}")
 
     # 5) 提交、推送、PR、issue 评论（宿主侧 git + installation API）
     base = (client.get_repo(full_name) or {}).get("default_branch") or "main"
@@ -241,17 +264,138 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
     run.pr_url = pr.get("html_url")
     _comment(
         client, full_name, issue_number,
-        f"已完成处理：{run.pr_url}\n\n{outcome.final_text[:3000]}",
+        f"已提交处理，进入迭代直至合入：{run.pr_url}\n\n{outcome.final_text[:3000]}",
     )
-    _finish(run, task_id, "completed")
+    with get_session_maker()() as session:
+        task = session.get(Task, task_id)
+        if task is not None:
+            task.pr_number = pr.get("number")
+        session.commit()
+    _finish(run, task_id, "in_review")
+
+
+RETRY_KV_KEY = "tasks:retry_max"
+DEFAULT_RETRY_MAX = 2
+
+
+def retry_max() -> int:
+    configured = kv_get(RETRY_KV_KEY)
+    try:
+        return int(configured) if configured is not None else DEFAULT_RETRY_MAX
+    except (TypeError, ValueError):
+        return DEFAULT_RETRY_MAX
 
 
 def _new_run(task_id: int) -> TaskRun:
     with get_session_maker()() as session:
-        run = TaskRun(task_id=task_id, iter_no=1)
+        last = session.scalar(
+            select(func.max(TaskRun.iter_no)).where(TaskRun.task_id == task_id)
+        )
+        run = TaskRun(task_id=task_id, iter_no=(last or 0) + 1)
         session.add(run)
         session.commit()
         return run
+
+
+def _last_session_id(task_id: int) -> str | None:
+    with get_session_maker()() as session:
+        return session.scalar(
+            select(TaskRun.agent_session_id)
+            .where(TaskRun.task_id == task_id, TaskRun.agent_session_id.is_not(None))
+            .order_by(TaskRun.id.desc())
+            .limit(1)
+        )
+
+
+def _fail(run: TaskRun, task_id: int, error: str) -> None:
+    """失败落盘：未超重试上限 → 重新排队（下一迭代续接），否则终态 failed。"""
+    attempts = run.iter_no
+    if attempts <= retry_max():
+        logger.warning("task #%s failed (attempt %s), retrying: %s", task_id, attempts, error)
+        with get_session_maker()() as session:
+            row = session.get(TaskRun, run.id)
+            row.exit_status = "failed_retry"
+            row.agent_session_id = run.agent_session_id
+            row.input_tokens = run.input_tokens
+            row.output_tokens = run.output_tokens
+            row.log_tail = run.log_tail
+            row.pr_url = run.pr_url
+            row.finished_at = datetime.now(UTC)
+            task = session.get(Task, task_id)
+            if task is not None and task.state == "running":
+                task.state = "queued"
+                task.error = error
+            session.commit()
+        return
+    _finish(run, task_id, "failed", error=error)
+
+
+def _pr_feedback(client, full_name: str, task_id: int, pr_number: int | None):
+    """PR 迭代的反馈上下文（上次运行之后的新评论/review/CI 失败）。
+
+    返回 (feedback_text, done)：done 非 None 表示 PR 已终态（合入/关闭），
+    任务直接完成，无需再跑。
+    """
+    if not pr_number:
+        return None, None
+    pr = client.get_pull_request(full_name, pr_number)
+    if pr.get("merged"):
+        return None, "pr_merged"
+    if pr.get("state") == "closed":
+        return None, "pr_closed_unmerged"
+    with get_session_maker()() as session:
+        watermark = session.scalar(
+            select(func.max(TaskRun.finished_at)).where(TaskRun.task_id == task_id)
+        )
+    watermark = (watermark or datetime.min.replace(tzinfo=UTC)).isoformat()
+
+    def _fresh(rows, time_key):
+        out = []
+        for row in rows:
+            stamp = row.get(time_key) or ""
+            if stamp > watermark:
+                out.append(row)
+        return out
+
+    bot = None
+    from vigilcultor.gh import service
+
+    try:
+        bot = service.bot_login()
+    except Exception:  # noqa: BLE001
+        bot = None
+    sections: list[str] = []
+    try:
+        comments = _fresh(client.list_pr_comments(full_name, pr_number), "created_at")
+        comments = [c for c in comments if not bot or (c.get("user") or {}).get("login") != bot]
+        for c in comments:
+            sections.append(f"评论[{(c.get('user') or {}).get('login', '?')}]：{c.get('body', '')}")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        reviews = _fresh(
+            [r for r in client.list_pr_reviews(full_name, pr_number) if r.get("body")],
+            "submitted_at",
+        )
+        for r in reviews:
+            login = (r.get("user") or {}).get("login", "?")
+            sections.append(f"评审[{login}]（{r.get('state')}）：{r.get('body')}")
+    except Exception:  # noqa: BLE001
+        pass
+    head_sha = (pr.get("head") or {}).get("sha")
+    if head_sha:
+        try:
+            failed = [
+                c
+                for c in client.list_check_runs(full_name, head_sha)
+                if c.get("conclusion") == "failure"
+            ]
+            for c in failed:
+                summary = ((c.get("output") or {}).get("summary") or "")[:500]
+                sections.append(f"CI 失败[{c.get('name')}]：{summary}")
+        except Exception:  # noqa: BLE001
+            pass
+    return ("\n".join(sections)[:8000] or None), None
 
 
 def _finish(
@@ -267,7 +411,8 @@ def _finish(
         row.pr_url = run.pr_url
         row.finished_at = datetime.now(UTC)
         task = session.get(Task, task_id)
-        if task is not None:
+        if task is not None and task.state == "running":
+            # 取消/抢占（cancelled）是人工终态，回写不得覆盖
             task.state = state
             task.error = error
         session.commit()
