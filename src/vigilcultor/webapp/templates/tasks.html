@@ -3,6 +3,32 @@
 {% block content %}
 <h1>{{ t('page.tasks.title', lang) }}</h1>
 <p class="desc">{{ t('page.tasks.desc', lang) }}</p>
+
+{% if cost_stats %}
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:16px">
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="text-align:left;color:var(--muted)">
+        <th style="padding:8px 12px">{{ t('logs.repo', lang) }}</th>
+        <th style="padding:8px 12px">{{ t('tasks.month', lang) }}</th>
+        <th style="padding:8px 12px">Tokens (in/out)</th>
+        <th style="padding:8px 12px">{{ t('tasks.cost_est', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in cost_stats %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 12px">{{ row.project }}</td>
+        <td style="padding:8px 12px">{{ row.month }}</td>
+        <td style="padding:8px 12px">{{ row.input_tokens }} / {{ row.output_tokens }}</td>
+        <td style="padding:8px 12px">${{ '%.4f' % row.cost_usd }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <div class="card" style="padding:0;overflow-x:auto">
   <table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead>
@@ -17,6 +43,7 @@
         <th style="padding:10px 12px">{{ t('tasks.priority', lang) }}</th>
         <th style="padding:10px 12px">{{ t('tasks.budget', lang) }}</th>
         <th style="padding:10px 12px">{{ t('logs.time', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.actions', lang) }}</th>
       </tr>
     </thead>
     <tbody>
@@ -37,9 +64,10 @@
         <td style="padding:8px 12px">{{ task.priority }}</td>
         <td style="padding:8px 12px">${{ '%.2f' % task.budget_usd }}</td>
         <td style="padding:8px 12px">{{ task.created_at.strftime('%m-%d %H:%M') if task.created_at else '' }}</td>
+        <td style="padding:8px 12px"><a href="/tasks/{{ task.id }}">#{{ task.id }} →</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="10" style="padding:24px;text-align:center;color:var(--muted)">{{ t('tasks.none', lang) }}</td></tr>
+      <tr><td colspan="11" style="padding:24px;text-align:center;color:var(--muted)">{{ t('tasks.none', lang) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

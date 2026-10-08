@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page.tasks.title', lang) }} #{{ task.id }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('tasks.detail_title', lang) }} #{{ task.id }}</h1>
+{% if flash %}<p class="ok">{{ t(flash, lang) }}</p>{% endif %}
+
+<div class="card">
+  <p>
+    <b>{{ task.project }}</b> ·
+    <a href="https://github.com/{{ task.project }}/issues/{{ task.issue }}" target="_blank">#{{ task.issue }}</a>
+    · {{ t('tasks.label', lang) }}：{{ task.label }} · {{ t('tasks.state', lang) }}：<b>{{ task.state }}</b>
+  </p>
+  <p>
+    {{ t('tasks.priority', lang) }}：{{ task.priority }} ·
+    {{ t('tasks.budget', lang) }}：${{ '%.2f' % task.budget_usd }}
+    {% if task.pr_number %} · PR <a href="https://github.com/{{ task.project }}/pull/{{ task.pr_number }}" target="_blank">#{{ task.pr_number }}</a>{% endif %}
+  </p>
+  {% if task.error %}<p class="error">{{ task.error }}</p>{% endif %}
+  {% if task.preserved_branch %}
+  <p>{{ t('tasks.preserved_branch', lang) }}：<code>{{ task.preserved_branch }}</code></p>
+  {% endif %}
+  {% if user.role == 'admin' %}
+  <div style="display:flex;gap:12px">
+    <form method="post" action="/tasks/{{ task.id }}/cancel"
+          onsubmit="return confirm('{{ t('tasks.cancel_confirm', lang) }}')">
+      <button class="ghost">{{ t('tasks.cancel', lang) }}</button>
+    </form>
+    <form method="post" action="/tasks/{{ task.id }}/rerun">
+      <button class="ghost">{{ t('tasks.rerun', lang) }}</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<h2>{{ t('tasks.runs', lang) }}</h2>
+{% for run in runs %}
+<div class="card">
+  <p>
+    <b>#{{ run.iter_no }}</b> · {{ run.exit_status }}
+    · {{ run.tokens[0] }}/{{ run.tokens[1] }} tok
+    · ${{ '%.4f' % run.cost_usd }}
+    {% if run.pr_url %} · <a href="{{ run.pr_url }}" target="_blank">PR →</a>{% endif %}
+    {% if run.session_id %} · <code style="font-size:11px">{{ run.session_id[:13] }}</code>{% endif %}
+  </p>
+  {% if run.log_tail %}
+  <details>
+    <summary>{{ t('tasks.log_tail', lang) }}</summary>
+    <pre style="max-height:300px;overflow:auto;font-size:11px;white-space:pre-wrap">{{ run.log_tail[-2000:] }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+<p class="desc">{{ t('tasks.no_runs', lang) }}</p>
+{% endfor %}
+<p><a href="/tasks">← {{ t('page.tasks.title', lang) }}</a></p>
+{% endblock %}
