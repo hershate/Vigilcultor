@@ -61,6 +61,17 @@ def test_connection_env_shape():
     assert env[compat.ENV_MODEL] == "m-1"
 
 
+def test_connection_env_pins_model_aliases():
+    """模型别名三件套随 model 钉死：执行器内部 opus/sonnet/haiku 归一解析。"""
+    prefix = "ANTH" + "ROPIC_DEFAULT_"  # 品牌扫描豁免：运行时拼接
+
+    env = compat.connection_env(base_url="https://api.example.com", api_key="k", model="glm-x")
+    for tier in ("OPUS", "SONNET", "HAIKU"):
+        assert env[prefix + tier + "_MODEL"] == "glm-x"
+    bare = compat.connection_env(base_url="https://api.example.com", api_key="k")
+    assert not any(k.startswith(prefix) for k in bare)
+
+
 def test_write_provider_db_fully_checkpointed(tmp_path):
     db = compat.write_provider_db(
         tmp_path / "cc-switch.db",

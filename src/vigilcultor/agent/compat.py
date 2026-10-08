@@ -135,5 +135,15 @@ def connection_env(
     if api_key:
         env[ENV_API_KEY] = api_key
     if model:
+        # 实测（opencode zen 网关，2026-10-08）：v0.19.35 无头模式不按
+        # ANTHROPIC_MODEL 选主模型（init 落回内置默认名），主模型必须经
+        # --model 钉死；别名三件套把执行器内部的 opus/sonnet/haiku 归一
+        # 解析（子代理/轻量调用）也指到 Provider 模型。
         env[ENV_MODEL] = model
+        for alias in (
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ):
+            env[alias] = model
     return env
