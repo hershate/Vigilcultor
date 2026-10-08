@@ -252,7 +252,14 @@ def _handle_pr_closed(session, event: EventRecord) -> DispatchOutcome:
     return DispatchOutcome(task.id, reason)
 
 
-def _requeue_for_iteration(task: Task, trigger: str) -> None:
+def _requeue_for_iteration(session, task: Task, trigger: str) -> None:
+    from vigilcultor.orchestrator.runner import iterations_exceeded
+
+    if iterations_exceeded(task.id):
+        logger.warning("task #%s hit iteration cap (%s)", task.id, trigger)
+        task.state = "failed"
+        task.error = "max_iterations_exceeded"
+        return
     logger.info("task #%s requeued for iteration (trigger=%s)", task.id, trigger)
     task.state = "queued"
     task.error = None
@@ -279,7 +286,7 @@ def _handle_pr_feedback(session, event: EventRecord, collaborator_check) -> Disp
         return DispatchOutcome(None, "not_collaborator")
     if not (review.get("body") or "").strip():
         return DispatchOutcome(None, "empty_review")
-    _requeue_for_iteration(task, "review")
+    _requeue_for_iteration(session, task, "review")
     session.commit()
     return DispatchOutcome(task.id, "iteration_requeued")
 
@@ -320,7 +327,7 @@ def _handle_comment(session, event: EventRecord, collaborator_check) -> Dispatch
             return DispatchOutcome(None, "no_task")
         if not check(event.repo_full_name, event.actor_login):
             return DispatchOutcome(None, "not_collaborator")
-        _requeue_for_iteration(task, "comment")
+        _requeue_for_iteration(session, task, "comment")
         session.commit()
         return DispatchOutcome(task.id, "iteration_requeued")
     return DispatchOutcome(None, "issue_comment_ignored")
@@ -383,6 +390,6 @@ def _handle_ci_finished(session, event: EventRecord) -> DispatchOutcome:
     task = session.get(Task, task_id)
     if task is None or task.state != "in_review":
         return DispatchOutcome(None, "no_task")
-    _requeue_for_iteration(task, "ci_failure")
+    _requeue_for_iteration(session, task, "ci_failure")
     session.commit()
     return DispatchOutcome(task.id, "iteration_requeued")

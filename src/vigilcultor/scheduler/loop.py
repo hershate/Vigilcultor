@@ -41,8 +41,12 @@ def tick(poller: Poller | None = None) -> dict:
                 }
             )
     try:
-        from vigilcultor.orchestrator.runner import run_pending_tasks
+        from vigilcultor.orchestrator.runner import (
+            poll_in_review_tasks,
+            run_pending_tasks,
+        )
 
+        summary["tasks_review_polled"] = poll_in_review_tasks()
         summary["tasks_started"] = run_pending_tasks()
     except Exception as exc:  # noqa: BLE001 - 领取失败不影响轮询结果
         logger.exception("task claim failed")

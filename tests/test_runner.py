@@ -50,6 +50,7 @@ class FakeClient:
         self.prs: list[dict] = []
         self.pr_state = {"state": "open", "merged": False}
         self.pr_feedback = []
+        self.check_runs: list[dict] = []
 
     def get_pull_request(self, full_name, number):
         return {"number": number, "head": {"sha": "abc123"}, **self.pr_state}
@@ -61,7 +62,7 @@ class FakeClient:
         return []
 
     def list_check_runs(self, full_name, ref):
-        return [{"name": "ci", "conclusion": "failure", "output": {"summary": "断言失败"}}]
+        return self.check_runs
 
     @property
     def token(self):
@@ -276,6 +277,8 @@ def test_pr_iteration_resumes_session_with_feedback(tmp_env, monkeypatch):
     client.pr_feedback = [
         {"user": {"login": "alice"}, "body": "请补一个测试", "created_at": "2999-01-01T00:00:00Z"}
     ]
+    client.check_runs = [{"name": "ci", "conclusion": "failure",
+                          "output": {"summary": "断言失败"}}]
     _wire(monkeypatch, client, pod, tmp_env)
     monkeypatch.setattr(runner, "_push_branch", lambda dest, branch, token: True)
     with get_session_maker()() as session:
@@ -338,3 +341,38 @@ def test_pr_body_contains_four_elements():
     assert "Closes #7" in body and "AI 自动生成" in body
     no_attr = runner._pr_body("改动说明", None, 7, "none")
     assert "AI 自动生成" not in no_attr
+
+
+def test_poll_in_review_compensation(tmp_env, monkeypatch):
+    """轮询补偿：PR 合入 → 终态；新反馈 → 续接入队；无变化 → 不动。"""
+    from vigilcultor.gh import service
+
+    task_id = seed(tmp_env, monkeypatch)
+    client = FakeClient()
+    monkeypatch.setattr(service, "installation_client_for", lambda iid: client)
+    with get_session_maker()() as session:
+        task = session.get(Task, task_id)
+        task.state = "in_review"
+        task.pr_number = 7
+        session.commit()
+
+    # PR open、无新反馈：不动
+    client.pr_feedback = []
+    assert runner.poll_in_review_tasks() == 0
+    assert _task_state(task_id) == "in_review"
+
+    # 新评论：续接入队
+    client.pr_feedback = [
+        {"user": {"login": "bob"}, "body": "再改一下", "created_at": "2999-01-01T00:00:00Z"}
+    ]
+    assert runner.poll_in_review_tasks() == 1
+    assert _task_state(task_id) == "queued"
+
+    # PR 合入：终态完成
+    with get_session_maker()() as session:
+        session.get(Task, task_id).state = "in_review"
+        session.commit()
+    client.pr_feedback = []
+    client.pr_state = {"state": "closed", "merged": True}
+    assert runner.poll_in_review_tasks() == 1
+    assert _task_state(task_id) == "completed"

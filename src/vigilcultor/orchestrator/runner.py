@@ -284,6 +284,24 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
 
 RETRY_KV_KEY = "tasks:retry_max"
 DEFAULT_RETRY_MAX = 2
+MAX_ITERS_KV_KEY = "tasks:max_iters"
+DEFAULT_MAX_ITERS = 20
+
+
+def iterations_exceeded(task_id: int) -> bool:
+    """迭代上限护栏：CI 持续红/反复 review 时防止无限迭代烧预算。"""
+    configured = kv_get(MAX_ITERS_KV_KEY)
+    try:
+        limit = int(configured) if configured is not None else DEFAULT_MAX_ITERS
+    except (TypeError, ValueError):
+        limit = DEFAULT_MAX_ITERS
+    with get_session_maker()() as session:
+        count = len(
+            session.scalars(
+                select(TaskRun.id).where(TaskRun.task_id == task_id)
+            ).all()
+        )
+    return count >= limit
 
 
 def retry_max() -> int:
@@ -461,6 +479,53 @@ def _dump_stream(task_id: int, iter_no: int, stdout: str) -> None:
     log_dir = data_dir() / "logs" / f"task-{task_id}"
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / f"iter-{iter_no}.jsonl").write_text(stdout, encoding="utf-8")
+
+
+def poll_in_review_tasks() -> int:
+    """轮询补偿：in_review 任务的 PR 终态与新反馈（webhook 丢失时兜底）。
+
+    PR 已合入/关闭 → 终态；有新评论/review/CI 失败 → 重新入队续接。
+    返回发生状态迁移的任务数。
+    """
+    from vigilcultor.gh import service
+
+    moved = 0
+    with get_session_maker()() as session:
+        rows = session.execute(
+            select(Task.id, Task.project_id).where(Task.state == "in_review")
+        ).all()
+    for task_id, project_id in rows:
+        try:
+            with get_session_maker()() as session:
+                project = session.get(Project, project_id)
+                task = session.get(Task, task_id)
+                if project is None or task is None or task.state != "in_review":
+                    continue  # 期间已被 webhook 处理
+                full_name, pr_number = project.full_name, task.pr_number
+            client = service.installation_client_for(project.installation_id)
+            if client is None or not pr_number:
+                continue
+            feedback, done = _pr_feedback(client, full_name, task_id, pr_number)
+            if done == "pr_merged":
+                _set_task_state(task_id, "completed", None)
+                moved += 1
+            elif done == "pr_closed_unmerged":
+                _set_task_state(task_id, "completed", "pr_closed_unmerged")
+                moved += 1
+            elif feedback:
+                if iterations_exceeded(task_id):
+                    _set_task_state(task_id, "failed", "max_iterations_exceeded")
+                    moved += 1
+                    continue
+                with get_session_maker()() as session:
+                    current = session.get(Task, task_id)
+                    if current is not None and current.state == "in_review":
+                        current.state = "queued"
+                        session.commit()
+                        moved += 1
+        except Exception:  # noqa: BLE001 - 单任务补偿失败不影响其余
+            logger.warning("poll compensation failed for task #%s", task_id, exc_info=True)
+    return moved
 
 
 def _comment(client, full_name: str, issue_number: int, body: str) -> None:
