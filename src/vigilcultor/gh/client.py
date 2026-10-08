@@ -221,6 +221,42 @@ class InstallationClient:
         response.raise_for_status()
         return response.json()
 
+    def get_pull_request(self, full_name: str, pr_number: int) -> dict:
+        response = self._client.get(
+            f"/repos/{full_name}/pulls/{pr_number}", headers=self._headers()
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_pr_comments(self, full_name: str, pr_number: int) -> list[dict]:
+        """PR 会话区评论（issue comments API 同源）。"""
+        response = self._client.get(
+            f"/repos/{full_name}/issues/{pr_number}/comments",
+            params={"per_page": 100},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_pr_reviews(self, full_name: str, pr_number: int) -> list[dict]:
+        response = self._client.get(
+            f"/repos/{full_name}/pulls/{pr_number}/reviews",
+            params={"per_page": 100},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_check_runs(self, full_name: str, ref: str) -> list[dict]:
+        """某 ref（分支或 sha）的检查运行（CI 结论）。"""
+        response = self._client.get(
+            f"/repos/{full_name}/commits/{ref}/check-runs",
+            params={"per_page": 100},
+            headers={**self._headers(), "Accept": "application/vnd.github+json"},
+        )
+        response.raise_for_status()
+        return response.json().get("check_runs", [])
+
 
 class CachedInstallationToken:
     """Thread-safe installation token with renewal margin."""

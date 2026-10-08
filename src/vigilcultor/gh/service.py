@@ -48,6 +48,19 @@ def reset_caches() -> None:
     _token_caches.clear()
 
 
+def bot_login() -> str | None:
+    """App 机器人账号名（``slug[bot]``）；凭据不可用时 None。"""
+    app_client = build_app_client()
+    if app_client is None:
+        return None
+    try:
+        app = app_client.get_app()
+    except Exception:  # noqa: BLE001 - 网络失败即无法识别自身评论
+        return None
+    slug = app.get("slug")
+    return f"{slug}[bot]" if slug else None
+
+
 def resolve_repo(full_name: str) -> tuple[int, RepoInfo] | None:
     """Find which installation owns *full_name*; None when absent everywhere."""
     from sqlalchemy import select

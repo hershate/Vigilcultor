@@ -122,6 +122,7 @@ class Task(Base):
     budget_usd: Mapped[int] = mapped_column(Integer, default=0)
     spent_usd: Mapped[int] = mapped_column(Integer, default=0)
     preserved_branch: Mapped[str | None] = mapped_column(String(256), default=None)
+    pr_number: Mapped[int | None] = mapped_column(Integer, default=None)
     error: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
