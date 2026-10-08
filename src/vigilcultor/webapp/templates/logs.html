@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page.logs.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('page.logs.title', lang) }}</h1>
+<p class="desc">{{ t('page.logs.desc', lang) }}</p>
+<div class="card" style="padding:0;overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="text-align:left;color:var(--muted)">
+        <th style="padding:10px 12px">{{ t('logs.time', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.source', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.type', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.action', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.repo', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.actor', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 12px">{{ e.received_at.strftime('%m-%d %H:%M:%S') if e.received_at else '' }}</td>
+        <td style="padding:8px 12px">{{ e.source }}</td>
+        <td style="padding:8px 12px">{{ e.event_type }}</td>
+        <td style="padding:8px 12px">{{ e.action or '' }}</td>
+        <td style="padding:8px 12px">{{ e.repo_full_name or '' }}</td>
+        <td style="padding:8px 12px">{{ e.actor_login or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted)">{{ t('logs.empty', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

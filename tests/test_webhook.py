@@ -15,6 +15,13 @@ from vigilcultor.store.models import AppCredentials, EventRecord
 
 SECRET = "whsec_test_123"
 
+SETUP = {
+    "username": "admin",
+    "password": "s3cretpass!",
+    "master_password": "master-pass-123",
+    "master_password2": "master-pass-123",
+}
+
 
 def sign(body: bytes) -> str:
     digest = hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
@@ -26,9 +33,8 @@ def prepared_client(tmp_env) -> TestClient:
     from vigilcultor.webapp.app import create_app
 
     client = TestClient(create_app(), follow_redirects=False)
-    client.post("/setup", data={"username": "admin", "password": "s3cretpass!"})
-    vault.set_master_password("master-pass-123")
-    vault.unlock("master-pass-123")
+    client.post("/setup", data=SETUP)
+    vault.unlock("master-pass-123")  # setup already configured the vault
     with get_session_maker()() as session:
         session.add(
             AppCredentials(
@@ -107,8 +113,9 @@ def test_missing_credentials_503(tmp_env):
     from vigilcultor.webapp.app import create_app
 
     client = TestClient(create_app(), follow_redirects=False)
-    client.post("/setup", data={"username": "admin", "password": "s3cretpass!"})
-    # no vault/credentials configured
+    client.post("/setup", data=SETUP)
+    vault.lock()
+    # vault locked and no credentials configured
     body = json.dumps(payload_issues_labeled()).encode()
     response = client.post(
         "/webhook/github",

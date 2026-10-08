@@ -40,6 +40,41 @@ STRINGS: dict[str, dict[str, str]] = {
         "page.settings.desc": "GitHub App、Provider、规则与系统参数配置。",
         "page.wip": "建设中",
         "error.403": "权限不足",
+        "setup.master_password": "主密码（加密 App 私钥等，至少 8 位）",
+        "setup.master_password2": "确认主密码",
+        "setup.master_mismatch": "两次输入的主密码不一致",
+        "vault.title": "密钥保险库",
+        "vault.desc": "主密码用于加密 GitHub App 私钥等敏感配置；服务重启后需重新解锁。",
+        "vault.status.configured": "已设置主密码",
+        "vault.status.unconfigured": "未设置主密码",
+        "vault.status.unlocked": "已解锁",
+        "vault.status.locked": "已锁定",
+        "vault.password": "主密码",
+        "vault.unlock": "解锁",
+        "vault.lock": "锁定",
+        "vault.wrong": "主密码错误",
+        "vault.not_configured": "请先在初始化向导中设置主密码",
+        "settings.vault_section": "密钥保险库",
+        "settings.vault_manage": "管理解锁状态",
+        "settings.gh_section": "GitHub App 凭据",
+        "settings.gh_webhook_hint": "Webhook 回调地址（填入 GitHub App 设置）",
+        "settings.app_id": "App ID",
+        "settings.private_key": "私钥（PEM）",
+        "settings.webhook_secret": "Webhook 密钥",
+        "settings.save": "保存",
+        "settings.test_connection": "测试连接",
+        "settings.saved": "已保存",
+        "settings.vault_locked_hint": "保险库已锁定，先解锁才能保存或测试",
+        "settings.test_ok": "连接成功：{slug}，{count} 个安装",
+        "settings.test_failed": "连接失败：{detail}",
+        "settings.no_credentials": "尚未配置 GitHub App 凭据",
+        "logs.time": "时间",
+        "logs.source": "来源",
+        "logs.type": "类型",
+        "logs.action": "动作",
+        "logs.repo": "仓库",
+        "logs.actor": "操作者",
+        "logs.empty": "暂无事件",
     },
     "en": {
         "app.name": "Vigilcultor",
@@ -76,6 +111,44 @@ STRINGS: dict[str, dict[str, str]] = {
         "page.settings.desc": "GitHub App, providers, rules and system parameters.",
         "page.wip": "Work in progress",
         "error.403": "Insufficient permissions",
+        "setup.master_password": "Master password (encrypts secrets, 8+ characters)",
+        "setup.master_password2": "Confirm master password",
+        "setup.master_mismatch": "Master passwords do not match",
+        "vault.title": "Secret vault",
+        "vault.desc": (
+            "The master password encrypts the GitHub App private key and other secrets;"
+            " relock after service restarts."
+        ),
+        "vault.status.configured": "Master password set",
+        "vault.status.unconfigured": "Master password not set",
+        "vault.status.unlocked": "Unlocked",
+        "vault.status.locked": "Locked",
+        "vault.password": "Master password",
+        "vault.unlock": "Unlock",
+        "vault.lock": "Lock",
+        "vault.wrong": "Wrong master password",
+        "vault.not_configured": "Set the master password in the setup wizard first",
+        "settings.vault_section": "Secret vault",
+        "settings.vault_manage": "Manage lock state",
+        "settings.gh_section": "GitHub App credentials",
+        "settings.gh_webhook_hint": "Webhook callback URL (paste into the GitHub App settings)",
+        "settings.app_id": "App ID",
+        "settings.private_key": "Private key (PEM)",
+        "settings.webhook_secret": "Webhook secret",
+        "settings.save": "Save",
+        "settings.test_connection": "Test connection",
+        "settings.saved": "Saved",
+        "settings.vault_locked_hint": "Vault is locked; unlock before saving or testing",
+        "settings.test_ok": "Connected: {slug}, {count} installation(s)",
+        "settings.test_failed": "Connection failed: {detail}",
+        "settings.no_credentials": "GitHub App credentials not configured yet",
+        "logs.time": "Time",
+        "logs.source": "Source",
+        "logs.type": "Type",
+        "logs.action": "Action",
+        "logs.repo": "Repo",
+        "logs.actor": "Actor",
+        "logs.empty": "No events yet",
     },
 }
 
@@ -87,9 +160,12 @@ def normalize(lang: str | None) -> str:
     return lang if lang in STRINGS else DEFAULT_LANG
 
 
-def t(key: str, lang: str | None = None) -> str:
+def t(key: str, lang: str | None = None, **kwargs: str) -> str:
     lang = normalize(lang)
-    return STRINGS[lang].get(key, STRINGS[DEFAULT_LANG].get(key, key))
+    text = STRINGS[lang].get(key, STRINGS[DEFAULT_LANG].get(key, key))
+    if kwargs:
+        text = text.format(**kwargs)
+    return text
 
 
 def lang_from(request: Request) -> str:

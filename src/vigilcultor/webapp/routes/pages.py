@@ -1,13 +1,15 @@
-"""Dashboard pages: overview plus the projects/tasks/logs/settings boards."""
+"""Dashboard pages: overview and the projects/tasks/logs boards (settings has its own router)."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 
 from vigilcultor.auth.roles import Role
 from vigilcultor.auth.session import require
-from vigilcultor.store.models import User
+from vigilcultor.store.db import get_session_maker
+from vigilcultor.store.models import EventRecord, User
 from vigilcultor.webapp.app import render
 
 router = APIRouter()
@@ -36,9 +38,12 @@ def tasks(request: Request, user: User = Depends(viewer_required)):
 
 @router.get("/logs")
 def logs(request: Request, user: User = Depends(viewer_required)):
-    return _page(request, "page.logs.title", "page.logs.desc")
-
-
-@router.get("/settings")
-def settings(request: Request, user: User = Depends(viewer_required)):
-    return _page(request, "page.settings.title", "page.settings.desc")
+    with get_session_maker()() as session:
+        events = session.scalars(
+            select(EventRecord).order_by(EventRecord.id.desc()).limit(50)
+        ).all()
+    return render(
+        request,
+        "logs.html",
+        {"title": "page.logs.title", "desc": "page.logs.desc", "events": events},
+    )
