@@ -164,4 +164,22 @@ class Poller:
                 )
             )
             session.commit()
+            record_id = (
+                session.scalar(
+                    select(EventRecord.id).where(
+                        EventRecord.dedup_key == normalized.dedup_key
+                    )
+                )
+                or 0
+            )
+        if record_id:
+            self._safe_dispatch(record_id)
         return 1
+
+    def _safe_dispatch(self, event_id: int) -> None:
+        from vigilcultor.orchestrator.dispatch import dispatch_event
+
+        try:
+            dispatch_event(event_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("dispatch failed for polled event #%s", event_id)

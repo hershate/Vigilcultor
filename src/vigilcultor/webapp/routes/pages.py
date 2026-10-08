@@ -1,4 +1,4 @@
-"""Dashboard pages: overview and the projects/tasks/logs boards (settings has its own router)."""
+"""Dashboard pages: overview and the logs board (projects/tasks/settings have their own routers)."""
 
 from __future__ import annotations
 
@@ -24,16 +24,6 @@ def _page(request: Request, title: str, desc: str) -> HTMLResponse:
 @router.get("/")
 def overview(request: Request, user: User = Depends(viewer_required)):
     return _page(request, "page.overview.title", "page.overview.desc")
-
-
-@router.get("/projects")
-def projects(request: Request, user: User = Depends(viewer_required)):
-    return _page(request, "page.projects.title", "page.projects.desc")
-
-
-@router.get("/tasks")
-def tasks(request: Request, user: User = Depends(viewer_required)):
-    return _page(request, "page.tasks.title", "page.tasks.desc")
 
 
 @router.get("/logs")

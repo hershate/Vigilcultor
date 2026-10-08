@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page.projects.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('page.projects.title', lang) }}</h1>
+<p class="desc">{{ t('page.projects.desc', lang) }}</p>
+
+{% if flash == 'projects.added' or flash == 'projects.added_batch' or flash == 'projects.state_changed' %}
+  <p class="ok">{{ t(flash, lang, name=flash_name) }}</p>
+{% elif flash %}
+  <p class="error">{{ t(flash, lang) }}</p>
+{% endif %}
+
+<div class="card">
+  <h2>{{ t('projects.hosted', lang) }}</h2>
+  {% if projects %}
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="text-align:left;color:var(--muted)">
+        <th style="padding:8px 10px">{{ t('logs.repo', lang) }}</th>
+        <th style="padding:8px 10px">{{ t('projects.account', lang) }}</th>
+        <th style="padding:8px 10px">{{ t('projects.state_label', lang) }}</th>
+        {% if can_manage %}<th style="padding:8px 10px">{{ t('projects.actions', lang) }}</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 10px">
+          {{ p.full_name }}
+          {% if p.is_fork and p.parent %}
+          <span style="color:var(--muted)">（fork ← {{ p.parent }}）</span>
+          {% endif %}
+        </td>
+        <td style="padding:8px 10px">{{ p.account }}</td>
+        <td style="padding:8px 10px">{{ p.state }}</td>
+        {% if can_manage %}
+        <td style="padding:8px 10px;display:flex;gap:8px">
+          {% if p.state == 'active' %}
+          <form method="post" action="/projects/{{ p.id }}/state">
+            <input type="hidden" name="state" value="paused">
+            <button class="ghost" style="margin:0;padding:4px 10px">{{ t('projects.pause', lang) }}</button>
+          </form>
+          {% elif p.state == 'paused' %}
+          <form method="post" action="/projects/{{ p.id }}/state">
+            <input type="hidden" name="state" value="active">
+            <button class="ghost" style="margin:0;padding:4px 10px">{{ t('projects.resume', lang) }}</button>
+          </form>
+          {% endif %}
+          {% if p.state != 'archived' %}
+          <form method="post" action="/projects/{{ p.id }}/state">
+            <input type="hidden" name="state" value="archived">
+            <button class="ghost" style="margin:0;padding:4px 10px">{{ t('projects.archive', lang) }}</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="desc">{{ t('projects.none', lang) }}</p>
+  {% endif %}
+</div>
+
+{% if can_manage %}
+<div class="card">
+  <h2>{{ t('projects.by_url', lang) }}</h2>
+  <form method="post" action="/projects/add" style="display:flex;gap:8px;flex-wrap:wrap">
+    <input name="url" placeholder="owner/repo 或 https://github.com/owner/repo" required
+           style="max-width:420px">
+    <button style="margin:0">{{ t('projects.add', lang) }}</button>
+  </form>
+</div>
+
+{% for inst, repos in install_repos %}
+<div class="card">
+  <h2>{{ t('projects.install_repos', lang) }} · {{ inst.account_login }}</h2>
+  {% set candidates = repos | rejectattr('full_name', 'in', hosted_names) | list %}
+  {% if candidates %}
+  <form method="post" action="/projects/add-selected">
+    {% for r in candidates %}
+    <label style="display:flex;align-items:center;gap:8px;margin:4px 0;color:var(--text)">
+      <input type="checkbox" name="repos" value="{{ r.full_name }}" style="width:auto">
+      {{ r.full_name }}{% if r.fork %} <span style="color:var(--muted)">(fork)</span>{% endif %}
+    </label>
+    {% endfor %}
+    <button>{{ t('projects.add_selected', lang) }}</button>
+  </form>
+  {% else %}
+  <p class="desc">{{ t('projects.all_added', lang) }}</p>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if not install_repos %}
+<p class="desc">{{ t('projects.unavailable', lang) }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

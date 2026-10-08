@@ -150,6 +150,25 @@ class InstallationClient:
             page += 1
         return repos
 
+    def get_permission(self, full_name: str, username: str) -> str:
+        """Collaborator permission level: admin | write | read | none."""
+        response = self._client.get(
+            f"/repos/{full_name}/collaborators/{username}/permission",
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json().get("permission", "none")
+
+    def list_issue_events(self, full_name: str, issue_number: int) -> list[dict]:
+        """Issue timeline events (labeled/unlabeled/…), newest last."""
+        response = self._client.get(
+            f"/repos/{full_name}/issues/{issue_number}/events",
+            params={"per_page": 100},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
     def list_issues(self, full_name: str, *, since: str | None = None) -> list[dict]:
         params: dict[str, str | int] = {"state": "all", "per_page": PER_PAGE}
         if since:
