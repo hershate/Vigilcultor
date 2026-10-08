@@ -5,3 +5,12 @@ AGENTS.md
 
 # 项目内临时测试环境（用完必清理）
 /TEMP/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+data/
