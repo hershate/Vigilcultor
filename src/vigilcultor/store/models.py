@@ -70,7 +70,8 @@ class Project(Base):
     sync_state: Mapped[str] = mapped_column(String(16), default="ok")  # ok|conflict|paused
     autonomy: Mapped[str] = mapped_column(String(16), default="pr")  # report|pr|auto
     pr_mode: Mapped[str] = mapped_column(String(16), default="ready")  # ready|draft
-    attribution: Mapped[str] = mapped_column(String(16), default="pr_note")  # none|pr_note|signature
+    # none|pr_note|signature
+    attribution: Mapped[str] = mapped_column(String(16), default="pr_note")
     limits_json: Mapped[str] = mapped_column(Text, default="{}")
     env_profile_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -98,7 +99,6 @@ class EventRecord(Base):
     """Normalized inbound GitHub event (webhook or polling compensation)."""
 
     __tablename__ = "event_records"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     gh_delivery_id: Mapped[str] = mapped_column(String(128), index=True)
     source: Mapped[str] = mapped_column(String(16), default="webhook")  # webhook|poll
