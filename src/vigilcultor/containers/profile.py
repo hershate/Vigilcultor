@@ -23,6 +23,18 @@ class EnvProfile:
     def to_json(self) -> str:
         return json.dumps(self.__dict__, ensure_ascii=False, sort_keys=True)
 
+    @classmethod
+    def from_json(cls, raw: str) -> EnvProfile:
+        data = json.loads(raw)
+        return cls(
+            language=data["language"],
+            base_image=data["base_image"],
+            setup_commands=list(data.get("setup_commands", [])),
+            build_command=data.get("build_command"),
+            test_command=data.get("test_command"),
+            evidence=dict(data.get("evidence", {})),
+        )
+
 
 # Detection priority: compiled languages first (they define the toolchain).
 _DETECTORS: list[str] = ["rust", "go", "node", "python"]
