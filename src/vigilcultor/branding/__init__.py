@@ -17,6 +17,24 @@ EXEMPT_PREFIXES = (
     "src/vigilcultor/agent/compat.py",
 )
 
+# 安装态（site-packages）没有 src/ 前缀，按包内路径后缀豁免，两种布局通用
+EXEMPT_SUFFIXES = (
+    "vigilcultor/branding/",
+    "vigilcultor/agent/compat.py",
+)
+
+
+def _exempt(rel: str) -> bool:
+    if any(rel.startswith(prefix) for prefix in EXEMPT_PREFIXES):
+        return True
+    for suffix in EXEMPT_SUFFIXES:
+        if suffix.endswith("/"):  # 目录豁免：该目录下所有文件
+            if f"/{suffix}" in f"/{rel}":
+                return True
+        elif rel.endswith(suffix):
+            return True
+    return False
+
 SCANNED_SUFFIXES = {".py", ".html", ".md", ".toml", ".yml", ".yaml", ".css", ".js", ".txt"}
 
 SKIP_DIRS = {".git", ".venv", "node_modules", "TEMP", "dist", "__pycache__", "note"}
@@ -37,7 +55,7 @@ def scan_repo(root: Path) -> list[tuple[Path, int, str]]:
         if any(part in SKIP_DIRS for part in path.parts):
             continue
         rel = path.relative_to(root).as_posix()
-        if any(rel.startswith(prefix) for prefix in EXEMPT_PREFIXES):
+        if _exempt(rel):
             continue
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
@@ -51,7 +69,15 @@ def scan_repo(root: Path) -> list[tuple[Path, int, str]]:
 
 def check(repo_root: Path | None = None) -> int:
     """CLI entry: print violations, return non-zero when any are found."""
-    root = repo_root or Path(__file__).resolve().parents[3]
+    if repo_root is not None:
+        root = repo_root
+    else:
+        # 源码仓：向上找 pyproject.toml；安装态（site-packages）退到包父目录
+        root = Path(__file__).resolve().parents[1]
+        for candidate in root.parents:
+            if (candidate / "pyproject.toml").is_file():
+                root = candidate
+                break
     violations = scan_repo(root)
     for rel, lineno, term in violations:
         print(f"{rel}:{lineno}: forbidden brand term '{term}'")
