@@ -24,9 +24,20 @@ else
 fi
 
 echo "==> 构建 wheel 与执行器"
-rm -rf dist
+# 执行器产物跨版本复用：版本仍匹配则不重编（全量 cargo 重编约 7 分钟）
+KEEP="$(mktemp -d)"
+[ -f dist/rusty-code-linux-x86_64 ] && mv dist/rusty-code-linux-x86_64 "$KEEP/"
+rm -rf dist && mkdir dist
+if [ -f "$KEEP/rusty-code-linux-x86_64" ] \
+    && "$KEEP/rusty-code-linux-x86_64" --version 2>/dev/null \
+        | grep -q "$(uv run python -c 'from vigilcultor.agent.executor import EXPECTED_VERSION as v; print(v)')"; then
+    echo "==> 复用已构建执行器（版本匹配）"
+    mv "$KEEP/rusty-code-linux-x86_64" dist/
+else
+    scripts/build-executor.sh
+fi
+rm -rf "$KEEP"
 uv build
-scripts/build-executor.sh
 (cd dist && sha256sum vigilcultor-*.whl rusty-code-linux-x86_64 > SHA256SUMS)
 
 echo "==> 发布 ${TAG}"
