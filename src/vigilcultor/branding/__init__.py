@@ -17,23 +17,16 @@ EXEMPT_PREFIXES = (
     "src/vigilcultor/agent/compat.py",
 )
 
-# 安装态（site-packages）没有 src/ 前缀，按包内路径后缀豁免，两种布局通用
-EXEMPT_SUFFIXES = (
-    "vigilcultor/branding/",
-    "vigilcultor/agent/compat.py",
-)
-
 
 def _exempt(rel: str) -> bool:
+    """按模块身份豁免：源码仓（src/ 前缀）、site-packages（vigilcultor/ 前缀）、
+    安装态包目录为根（无前缀）三种布局通用。"""
     if any(rel.startswith(prefix) for prefix in EXEMPT_PREFIXES):
         return True
-    for suffix in EXEMPT_SUFFIXES:
-        if suffix.endswith("/"):  # 目录豁免：该目录下所有文件
-            if f"/{suffix}" in f"/{rel}":
-                return True
-        elif rel.endswith(suffix):
-            return True
-    return False
+    parts = rel.split("/")
+    if "branding" in parts[:-1]:  # 策略定义目录自身
+        return True
+    return parts[-2:] == ["agent", "compat.py"]  # 唯一豁免模块
 
 SCANNED_SUFFIXES = {".py", ".html", ".md", ".toml", ".yml", ".yaml", ".css", ".js", ".txt"}
 
