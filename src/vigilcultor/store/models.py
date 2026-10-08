@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -93,6 +101,30 @@ class Rule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     cooldown_sec: Mapped[int] = mapped_column(Integer, default=300)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Task(Base):
+    """A label-triggered work item (execution arrives with M4+)."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (Index("ix_tasks_project_issue", "project_id", "issue_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    rule_id: Mapped[int] = mapped_column(ForeignKey("rules.id"))
+    event_id: Mapped[int] = mapped_column(ForeignKey("event_records.id"))
+    issue_number: Mapped[int] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(32))
+    state: Mapped[str] = mapped_column(String(16), default="queued")
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    # USD amounts stored in cents to stay integral.
+    budget_usd: Mapped[int] = mapped_column(Integer, default=0)
+    spent_usd: Mapped[int] = mapped_column(Integer, default=0)
+    preserved_branch: Mapped[str | None] = mapped_column(String(256), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class EventRecord(Base):
