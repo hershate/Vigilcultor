@@ -10,6 +10,10 @@
       <input name="username" autocomplete="username" required minlength="2">
       <label>{{ t('setup.password', lang) }}</label>
       <input name="password" type="password" autocomplete="new-password" required minlength="8">
+      <label>{{ t('setup.master_password', lang) }}</label>
+      <input name="master_password" type="password" autocomplete="new-password" required minlength="8">
+      <label>{{ t('setup.master_password2', lang) }}</label>
+      <input name="master_password2" type="password" autocomplete="new-password" required minlength="8">
       <button>{{ t('setup.submit', lang) }}</button>
     </form>
     {% if error %}<p class="error">{{ t(error, lang) }}</p>{% endif %}

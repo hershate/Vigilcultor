@@ -13,5 +13,6 @@ def tmp_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     from vigilcultor.store import db
 
     db.reset_cache()
+    db.init_db()
     yield tmp_path
     db.reset_cache()

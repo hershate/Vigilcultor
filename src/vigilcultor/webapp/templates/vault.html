@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ t('vault.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('vault.title', lang) }}</h1>
+<p class="desc">{{ t('vault.desc', lang) }}</p>
+<div class="card">
+  <p>
+    {{ t('vault.status.configured' if vault_configured else 'vault.status.unconfigured', lang) }}
+    ·
+    {{ t('vault.status.unlocked' if vault_unlocked else 'vault.status.locked', lang) }}
+  </p>
+  {% if vault_unlocked %}
+  <form method="post" action="/vault/lock">
+    <button class="ghost">{{ t('vault.lock', lang) }}</button>
+  </form>
+  {% else %}
+  <form method="post" action="/vault/unlock">
+    <label>{{ t('vault.password', lang) }}</label>
+    <input name="password" type="password" autocomplete="current-password" required>
+    <button>{{ t('vault.unlock', lang) }}</button>
+  </form>
+  {% if error %}<p class="error">{{ t(error, lang) }}</p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

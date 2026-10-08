@@ -38,11 +38,19 @@ def setup_form(request: Request):
 
 
 @router.post("/setup")
-def setup_create(request: Request, username: str = Form(...), password: str = Form(...)):
+def setup_create(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    master_password: str = Form(...),
+    master_password2: str = Form(...),
+):
     if _user_count() > 0:
         return render(request, "login.html", {"notice": "setup.exists"}, status_code=400)
     if len(username.strip()) < MIN_USERNAME or len(password) < MIN_PASSWORD:
         return render(request, "setup.html", {"error": "setup.invalid"}, status_code=422)
+    if master_password != master_password2 or len(master_password) < MIN_PASSWORD:
+        return render(request, "setup.html", {"error": "setup.master_mismatch"}, status_code=422)
 
     role = Role.ADMIN.value  # first registered user becomes the administrator
     with get_session_maker()() as session:
@@ -53,6 +61,14 @@ def setup_create(request: Request, username: str = Form(...), password: str = Fo
         session.add(user)
         session.commit()
         user_id = user.id
+
+    # The vault keeps the session unlocked right after setup for convenience.
+    from vigilcultor.rules.engine import seed_default_rules
+    from vigilcultor.secrets import vault
+
+    vault.set_master_password(master_password)
+    vault.unlock(master_password)  # stay unlocked right after first-run setup
+    seed_default_rules()
     return _login_redirect(user_id)
 
 

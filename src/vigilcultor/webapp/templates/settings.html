@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page.settings.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('page.settings.title', lang) }}</h1>
+<p class="desc">{{ t('page.settings.desc', lang) }}</p>
+
+{% if flash == 'settings.test_ok' %}
+  <p class="ok">{{ t('settings.test_ok', lang, slug=flash_slug, count=flash_count) }}</p>
+{% elif flash == 'settings.test_failed' %}
+  <p class="error">{{ t('settings.test_failed', lang, detail=flash_detail) }}</p>
+{% elif flash %}
+  <p class="ok">{{ t(flash, lang) }}</p>
+{% endif %}
+
+<div class="card">
+  <h2>{{ t('settings.vault_section', lang) }}</h2>
+  <p>
+    {{ t('vault.status.configured' if vault_configured else 'vault.status.unconfigured', lang) }}
+    ·
+    {{ t('vault.status.unlocked' if vault_unlocked else 'vault.status.locked', lang) }}
+  </p>
+  {% if user.role == 'admin' %}
+  <a href="/vault">{{ t('settings.vault_manage', lang) }} →</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>{{ t('settings.gh_section', lang) }}</h2>
+  <p class="desc">{{ t('settings.gh_webhook_hint', lang) }}：<code>{{ webhook_url }}</code></p>
+  {% if has_credentials %}
+  <p>App ID：{{ app_id }}</p>
+  {% else %}
+  <p class="desc">{{ t('settings.no_credentials', lang) }}</p>
+  {% endif %}
+
+  {% if user.role == 'admin' %}
+  {% if not vault_unlocked %}<p class="error">{{ t('settings.vault_locked_hint', lang) }}</p>{% endif %}
+  <form method="post" action="/settings/app-credentials">
+    <label>{{ t('settings.app_id', lang) }}</label>
+    <input name="app_id" type="number" required value="{{ app_id or '' }}">
+    <label>{{ t('settings.private_key', lang) }}</label>
+    <textarea name="private_key" rows="6" required
+      style="width:100%;max-width:560px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;"></textarea>
+    <label>{{ t('settings.webhook_secret', lang) }}</label>
+    <input name="webhook_secret" required>
+    <div style="display:flex;gap:12px">
+      <button>{{ t('settings.save', lang) }}</button>
+      <button class="ghost" formaction="/settings/app-credentials/test"
+              formmethod="post">{{ t('settings.test_connection', lang) }}</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
