@@ -1,6 +1,6 @@
 [project]
 name = "vigilcultor"
-version = "0.1.0.dev4"
+version = "0.1.0.dev5"
 description = "Self-hosted AI caretaker for GitHub repositories: label-driven, container-isolated"
 readme = "README.md"
 license = "Apache-2.0"
