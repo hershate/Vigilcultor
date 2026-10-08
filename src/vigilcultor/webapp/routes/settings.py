@@ -94,9 +94,22 @@ def save_agent_provider(
         blob = vault.encrypt(json.dumps(config, ensure_ascii=False))
     except vault.VaultError:
         return _flash("settings.vault_locked_hint")
-    from vigilcultor.store.kv import kv_set
+    from urllib.parse import urlparse
+
+    from vigilcultor.netproxy.defaults import ALLOWLIST_KV_KEY
+    from vigilcultor.store.kv import kv_get, kv_set
 
     kv_set("agent:provider", blob)
+
+    # Provider 端点域名自动加入出口白名单：任务容器出网走审计代理，
+    # 不放行会被 403 拦截（kv 扩展项与默认清单取并集，只增不减）
+    host = (urlparse(base_url).hostname or "").lower()
+    if host:
+        extra = kv_get(ALLOWLIST_KV_KEY)
+        hosts = [str(h).lower() for h in extra if str(h).strip()] if isinstance(extra, list) else []
+        if host not in hosts:
+            hosts.append(host)
+            kv_set(ALLOWLIST_KV_KEY, hosts)
     return _flash("settings.saved")
 
 

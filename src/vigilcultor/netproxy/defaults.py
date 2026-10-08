@@ -30,10 +30,15 @@ DEFAULT_ALLOWLIST: tuple[str, ...] = (
 
 
 def effective_allowlist() -> list[str]:
+    """默认清单 ∪ kv 扩展项（kv 只增不减，避免覆盖掉 GitHub/包生态必需项）。"""
     try:
         configured = kv_get(ALLOWLIST_KV_KEY)
     except Exception:  # noqa: BLE001 - uninitialized database falls back to defaults
         configured = None
-    if isinstance(configured, list) and configured:
-        return [str(host) for host in configured]
-    return list(DEFAULT_ALLOWLIST)
+    merged = list(DEFAULT_ALLOWLIST)
+    if isinstance(configured, list):
+        for host in configured:
+            name = str(host).lower().strip()
+            if name and name not in merged:
+                merged.append(name)
+    return merged

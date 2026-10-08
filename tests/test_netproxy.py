@@ -117,3 +117,16 @@ def test_default_bind_host_falls_back(monkeypatch):
 
     monkeypatch.setattr(srv.subprocess, "run", boom)
     assert srv.default_bind_host() == "127.0.0.1"
+
+
+def test_effective_allowlist_unions_defaults(tmp_env):
+    """kv 扩展项与默认清单取并集：只增不减、大小写归一。"""
+    from vigilcultor.netproxy.defaults import DEFAULT_ALLOWLIST, effective_allowlist
+    from vigilcultor.store.kv import kv_set
+
+    kv_set("netproxy:allowlist", ["opencode.ai", "GitHub.com", "  "])
+    merged = effective_allowlist()
+    assert "opencode.ai" in merged
+    assert merged.count("github.com") == 1  # 归一去重，不重复默认项
+    assert "pypi.org" in merged  # 默认包生态项保留
+    assert set(DEFAULT_ALLOWLIST) <= set(merged)

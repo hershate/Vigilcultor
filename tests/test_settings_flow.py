@@ -147,6 +147,12 @@ def test_agent_provider_saved_encrypted_and_shown(tmp_env):
     provider = load_provider()
     assert provider["auth_token"] == "tok-1" and provider["model"] == "glm-x"
 
+    # Provider 端点域名自动加入出口白名单（容器任务出网必需）
+    from vigilcultor.netproxy.defaults import effective_allowlist
+
+    assert "api.example.com" in effective_allowlist()
+    assert "github.com" in effective_allowlist()  # 默认项不被覆盖
+
 
 def test_agent_provider_requires_credential(tmp_env):
     client = make_client(tmp_env)
