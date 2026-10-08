@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ t('app.name', lang) }}{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #161a22; --border: #262c38;
+      --text: #e6e8ee; --muted: #8b93a7; --accent: #7aa2f7; --danger: #f7768e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.6 system-ui, "Noto Sans CJK SC", sans-serif;
+    }
+    nav {
+      display: flex; align-items: center; gap: 4px;
+      padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    nav .brand { font-weight: 700; color: var(--accent); margin-right: 16px; }
+    nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; }
+    nav a:hover, nav a.active { color: var(--text); background: var(--border); }
+    nav .spacer { flex: 1; }
+    nav form { margin: 0; }
+    main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .desc { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; margin-bottom: 16px;
+    }
+    .wip { color: var(--muted); border: 1px dashed var(--border); border-radius: 10px;
+           padding: 40px; text-align: center; }
+    label { display: block; margin: 12px 0 4px; color: var(--muted); }
+    input {
+      width: 100%; max-width: 340px; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    }
+    button {
+      margin-top: 16px; padding: 8px 18px; border-radius: 6px; border: 0;
+      background: var(--accent); color: #0b0e14; font-weight: 600; cursor: pointer;
+    }
+    button.ghost { background: var(--border); color: var(--text); }
+    .error { color: var(--danger); margin-top: 12px; }
+    .auth-box { max-width: 380px; margin: 8vh auto 0; }
+    .auth-box .tagline { color: var(--muted); margin-bottom: 18px; }
+    footer { color: var(--muted); font-size: 12px; text-align: center; padding: 18px 0 26px; }
+  </style>
+</head>
+<body>
+  {% if user %}
+  <nav>
+    <span class="brand">{{ t('app.name', lang) }}</span>
+    <a href="/">{{ t('nav.overview', lang) }}</a>
+    <a href="/projects">{{ t('nav.projects', lang) }}</a>
+    <a href="/tasks">{{ t('nav.tasks', lang) }}</a>
+    <a href="/logs">{{ t('nav.logs', lang) }}</a>
+    <a href="/settings">{{ t('nav.settings', lang) }}</a>
+    <span class="spacer"></span>
+    <span>{{ user.username }} · {{ user.role }}</span>
+    <form method="post" action="/logout"><button class="ghost">{{ t('nav.logout', lang) }}</button></form>
+  </nav>
+  {% endif %}
+  <main>{% block content %}{% endblock %}</main>
+  <footer>Vigilcultor {{ version }}</footer>
+</body>
+</html>
