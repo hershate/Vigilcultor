@@ -73,6 +73,9 @@ async def github_webhook(request: Request) -> JSONResponse:
     with get_session_maker()() as session:
         session.add(record)
         session.commit()
+        record_id = record.id
+
+    _safe_dispatch(record_id)
 
     logger.info(
         "webhook accepted: type=%s action=%s repo=%s",
@@ -81,3 +84,13 @@ async def github_webhook(request: Request) -> JSONResponse:
         normalized.repo_full_name,
     )
     return JSONResponse({"status": "accepted"}, status_code=202)
+
+
+def _safe_dispatch(event_id: int) -> None:
+    """Dispatch must never break webhook acknowledgement."""
+    from vigilcultor.orchestrator.dispatch import dispatch_event
+
+    try:
+        dispatch_event(event_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("dispatch failed for event #%s", event_id)
