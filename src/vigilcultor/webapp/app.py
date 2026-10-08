@@ -45,10 +45,12 @@ def create_app() -> FastAPI:
     async def _redirect_to_login(request: Request, exc: StarletteHTTPException):
         return RedirectResponse("/login", status_code=303)
 
-    from vigilcultor.webapp.routes import auth, pages, settings, vault, webhook
+    from vigilcultor.webapp.routes import auth, pages, projects, settings, tasks, vault, webhook
 
     app.include_router(auth.router)
     app.include_router(pages.router)
+    app.include_router(projects.router)
+    app.include_router(tasks.router)
     app.include_router(settings.router)
     app.include_router(vault.router)
     app.include_router(webhook.router)

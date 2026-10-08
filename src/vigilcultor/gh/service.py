@@ -6,7 +6,12 @@ scheduler/worker processes.
 
 from __future__ import annotations
 
-from vigilcultor.gh.client import CachedInstallationToken, GithubAppClient, InstallationClient
+from vigilcultor.gh.client import (
+    CachedInstallationToken,
+    GithubAppClient,
+    InstallationClient,
+    RepoInfo,
+)
 from vigilcultor.secrets import vault
 from vigilcultor.store.db import get_session_maker
 from vigilcultor.store.models import AppCredentials
@@ -41,3 +46,28 @@ def installation_client_for(installation_id: int) -> InstallationClient | None:
 
 def reset_caches() -> None:
     _token_caches.clear()
+
+
+def resolve_repo(full_name: str) -> tuple[int, RepoInfo] | None:
+    """Find which installation owns *full_name*; None when absent everywhere."""
+    from sqlalchemy import select
+
+    from vigilcultor.store.db import get_session_maker
+    from vigilcultor.store.models import Installation
+
+    with get_session_maker()() as session:
+        installation_ids = [
+            row[0] for row in session.execute(select(Installation.installation_id)).all()
+        ]
+    for installation_id in installation_ids:
+        client = installation_client_for(installation_id)
+        if client is None:
+            continue
+        try:
+            repos = client.list_repos()
+        except Exception:  # noqa: BLE001 - one installation failing must not block others
+            continue
+        for repo in repos:
+            if repo.full_name == full_name:
+                return installation_id, repo
+    return None

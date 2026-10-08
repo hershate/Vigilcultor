@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ t('page.tasks.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<h1>{{ t('page.tasks.title', lang) }}</h1>
+<p class="desc">{{ t('page.tasks.desc', lang) }}</p>
+<div class="card" style="padding:0;overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="text-align:left;color:var(--muted)">
+        <th style="padding:10px 12px">#</th>
+        <th style="padding:10px 12px">{{ t('logs.repo', lang) }}</th>
+        <th style="padding:10px 12px">Issue</th>
+        <th style="padding:10px 12px">{{ t('tasks.label', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.action', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.state', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.priority', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.budget', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('logs.time', lang) }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in tasks %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 12px">{{ task.id }}</td>
+        <td style="padding:8px 12px">{{ task.project }}</td>
+        <td style="padding:8px 12px">#{{ task.issue }}</td>
+        <td style="padding:8px 12px">{{ task.label }}</td>
+        <td style="padding:8px 12px">{{ task.action }}</td>
+        <td style="padding:8px 12px">{{ task.state }}</td>
+        <td style="padding:8px 12px">{{ task.priority }}</td>
+        <td style="padding:8px 12px">${{ '%.2f' % task.budget_usd }}</td>
+        <td style="padding:8px 12px">{{ task.created_at.strftime('%m-%d %H:%M') if task.created_at else '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">{{ t('tasks.none', lang) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
