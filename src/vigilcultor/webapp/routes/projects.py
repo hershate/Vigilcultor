@@ -151,3 +151,18 @@ def set_state(
         project.state = state
         session.commit()
     return _flash("projects.state_changed", name=state)
+
+
+@router.post("/projects/{project_id}/onboard")
+def onboard(
+    request: Request,
+    project_id: int,
+    user: User = Depends(operator_required),
+):
+    from vigilcultor.containers.onboard import onboard_project
+
+    report = onboard_project(project_id)
+    if report.ok:
+        return _flash("onboard.ok", name=report.language or "?")
+    reason = report.error or "unknown"
+    return _flash("onboard.failed", name=reason)
