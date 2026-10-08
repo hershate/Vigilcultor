@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ t('setup.title', lang) }} · {{ t('app.name', lang) }}{% endblock %}
+{% block content %}
+<div class="auth-box">
+  <div class="card">
+    <h1>{{ t('setup.title', lang) }}</h1>
+    <p class="tagline">{{ t('setup.hint', lang) }}</p>
+    <form method="post" action="/setup">
+      <label>{{ t('setup.username', lang) }}</label>
+      <input name="username" autocomplete="username" required minlength="2">
+      <label>{{ t('setup.password', lang) }}</label>
+      <input name="password" type="password" autocomplete="new-password" required minlength="8">
+      <button>{{ t('setup.submit', lang) }}</button>
+    </form>
+    {% if error %}<p class="error">{{ t(error, lang) }}</p>{% endif %}
+  </div>
+</div>
+{% endblock %}
