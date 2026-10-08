@@ -202,3 +202,179 @@ def test_unsupported_event_marked_processed(tmp_env, monkeypatch):
     assert dispatch_event(record_id).reason == "unsupported"
     with get_session_maker()() as session:
         assert session.get(EventRecord, record_id).processed
+
+
+# ---------- M5：issue 关闭取消 / PR 驱动迭代 / @机器人指令 ----------
+
+def _store_raw(tmp_env, monkeypatch, event_type: str, payload: dict) -> int:
+    payload = {"repository": {"full_name": PROJECT}, **payload}
+    record = EventRecord(
+        gh_delivery_id=f"d-{event_type}-{payload.get('action')}-{len(payload)}",
+        source="webhook",
+        event_type=event_type,
+        action=payload.get("action"),
+        repo_full_name=PROJECT,
+        actor_login=(payload.get("sender") or {}).get("login"),
+        dedup_key=payload.get("dedup", str(len(str(payload)))),
+        payload_json=dumps(payload),
+    )
+    with get_session_maker()() as session:
+        session.add(record)
+        session.commit()
+        return record.id
+
+
+def _make_task(tmp_env, *, state: str = "in_review", pr_number: int | None = 12,
+               issue: int = 7) -> int:
+    with get_session_maker()() as session:
+        project = session.scalar(select(Project).where(Project.full_name == PROJECT))
+        rule = session.scalars(select(Task.rule_id)).first()
+        rule_id = rule or session.scalars(
+            select(__import__("vigilcultor.store.models", fromlist=["Rule"]).Rule.id)
+        ).first()
+        event = EventRecord(gh_delivery_id="d-x9", event_type="issues", action="labeled",
+                            dedup_key="k-x9", payload_json="{}")
+        session.add(event)
+        session.commit()
+        task = Task(project_id=project.id, rule_id=rule_id, event_id=event.id,
+                    issue_number=issue, label=LABEL, action="ai_task",
+                    state=state, pr_number=pr_number)
+        session.add(task)
+        session.commit()
+        return task.id
+
+
+def test_issue_closed_cancels_running_task(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env, state="running", pr_number=None)
+    event_id = _store_raw(tmp_env, monkeypatch, "issues", {
+        "action": "closed", "issue": {"number": 7, "id": 77},
+    })
+    outcome = dispatch_event(event_id)
+    assert outcome.reason == "issue_closed_cancelled"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "cancelled"
+
+
+def test_pr_merged_completes_task(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "pull_request", {
+        "action": "closed",
+        "pull_request": {"number": 12, "id": 9012, "merged": True,
+                         "updated_at": "2026-10-08T13:00:00Z"},
+    })
+    outcome = dispatch_event(event_id)
+    assert outcome.reason == "pr_merged_completed"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "completed"
+
+
+def test_pr_closed_unmerged_cancels_task(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "pull_request", {
+        "action": "closed",
+        "pull_request": {"number": 12, "id": 9012, "merged": False,
+                         "updated_at": "2026-10-08T13:00:00Z"},
+    })
+    outcome = dispatch_event(event_id)
+    assert outcome.reason == "pr_closed_cancelled"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "cancelled"
+
+
+def test_pr_review_requeues_in_review_task(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "pull_request_review", {
+        "action": "submitted",
+        "pull_request": {"number": 12, "id": 9012},
+        "review": {"body": "请修改命名", "state": "CHANGES_REQUESTED"},
+        "sender": {"login": "alice"},
+    })
+    assert dispatch_event(event_id).reason == "iteration_requeued"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "queued"
+
+
+def test_pr_review_non_collaborator_rejected(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "pull_request_review", {
+        "action": "submitted",
+        "pull_request": {"number": 12, "id": 9012},
+        "review": {"body": "x"},
+        "sender": {"login": "stranger"},
+    })
+    assert dispatch_event(event_id).reason == "not_collaborator"
+
+
+def test_pr_comment_requeues(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "issue_comment", {
+        "action": "created",
+        "issue": {"number": 12, "pull_request": {"url": "pr"}},
+        "comment": {"id": 55, "body": "这里改成异步吧"},
+        "sender": {"login": "alice"},
+    })
+    assert dispatch_event(event_id).reason == "iteration_requeued"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "queued"
+
+
+def test_bot_command_skip_cancels(tmp_env, monkeypatch):
+    from vigilcultor.orchestrator import dispatch as dispatch_mod
+
+    seed(tmp_env, monkeypatch)
+    monkeypatch.setattr(dispatch_mod, "_bot_login", lambda: "vgc-bot[bot]")
+    task_id = _make_task(tmp_env, state="running")
+    event_id = _store_raw(tmp_env, monkeypatch, "issue_comment", {
+        "action": "created",
+        "issue": {"number": 7},
+        "comment": {"id": 56, "body": "@vgc-bot[bot] skip"},
+        "sender": {"login": "alice"},
+    })
+    assert dispatch_event(event_id).reason == "bot_skip"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "cancelled"
+
+
+def test_bot_command_retry_requeues_terminal(tmp_env, monkeypatch):
+    from vigilcultor.orchestrator import dispatch as dispatch_mod
+
+    seed(tmp_env, monkeypatch)
+    monkeypatch.setattr(dispatch_mod, "_bot_login", lambda: "vgc-bot[bot]")
+    task_id = _make_task(tmp_env, state="failed")
+    event_id = _store_raw(tmp_env, monkeypatch, "issue_comment", {
+        "action": "created",
+        "issue": {"number": 7},
+        "comment": {"id": 57, "body": "@vgc-bot[bot] retry"},
+        "sender": {"login": "alice"},
+    })
+    assert dispatch_event(event_id).reason == "bot_retry"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "queued"
+
+
+def test_ci_failure_on_task_branch_requeues(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    task_id = _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "check_suite", {
+        "action": "completed",
+        "check_suite": {"head_branch": f"vgc/task-{task_id}", "conclusion": "failure"},
+    })
+    assert dispatch_event(event_id).reason == "iteration_requeued"
+    with get_session_maker()() as session:
+        assert session.get(Task, task_id).state == "queued"
+
+
+def test_ci_success_ignored(tmp_env, monkeypatch):
+    seed(tmp_env, monkeypatch)
+    _make_task(tmp_env)
+    event_id = _store_raw(tmp_env, monkeypatch, "check_suite", {
+        "action": "completed",
+        "check_suite": {"head_branch": "vgc/task-1", "conclusion": "success"},
+    })
+    assert dispatch_event(event_id).reason == "ignored"
