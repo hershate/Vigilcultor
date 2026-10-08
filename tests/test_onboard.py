@@ -16,6 +16,7 @@ PROJECT = "acme/alpha"
 class FakePodman:
     def __init__(self):
         self.calls: list[list[str]] = []
+        self.proxies: list[str | None] = []
 
     def build(self, tag, context_dir, *, containerfile="Containerfile"):
         self.calls.append(["build", tag])
@@ -23,6 +24,7 @@ class FakePodman:
 
     def run(self, name, image, command, **kwargs):
         self.calls.append(["run", name, *command])
+        self.proxies.append(kwargs.get("proxy"))
         return RunResult(["run"], 0, "all tests passed", "")
 
     def rm(self, name, *, force=True):
@@ -82,6 +84,24 @@ def test_onboard_full_pass(tmp_env):
     # container invocations: build + run(test) + rm
     kinds = [call[0] for call in pod.calls]
     assert kinds == ["build", "run", "rm"]
+    assert pod.proxies == [None]  # no proxy announced -> no injection
+
+
+def test_onboard_injects_announced_proxy(tmp_env):
+    project_id = seed(tmp_env)
+    seed_default_rules()
+    from vigilcultor.netproxy.endpoint import announce
+
+    announce("192.0.2.10", 3128)
+    pod = FakePodman()
+    report = onboard_project(
+        project_id,
+        cloner=fake_cloner_factory(tmp_env),
+        podman=pod,
+        labels_loader=lambda full_name: [],
+    )
+    assert report.ok
+    assert pod.proxies == ["http://host.containers.internal:3128"]
 
 
 def test_onboard_clone_failure(tmp_env):

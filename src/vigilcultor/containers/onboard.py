@@ -27,6 +27,7 @@ from vigilcultor.containers.imagegen import (
 )
 from vigilcultor.containers.podman import Podman
 from vigilcultor.containers.profile import EnvProfile, detect_profile
+from vigilcultor.netproxy.endpoint import container_proxy_url
 from vigilcultor.store.db import get_session_maker
 from vigilcultor.store.models import Project, Rule
 
@@ -133,6 +134,7 @@ def onboard_project(
 
     # 4) baseline: runtime setup + build/test commands inside the project image
     setup = runtime_setup(profile, files)
+    proxy_url = container_proxy_url()
     for kind, command in (("build", profile.build_command), ("test", profile.test_command)):
         if not command:
             report.baseline[kind] = "skipped"
@@ -140,7 +142,7 @@ def onboard_project(
         full_command = f"{setup} && {command}" if setup else command
         result = podman.run(
             f"vgc-onboard-{project_id}", tag, ["sh", "-c", full_command],
-            volumes={str(dest): "/workspace"}, workdir="/workspace",
+            volumes={str(dest): "/workspace"}, workdir="/workspace", proxy=proxy_url,
         )
         podman.rm(f"vgc-onboard-{project_id}")
         report.baseline[kind] = "ok" if result.ok else "failed"
