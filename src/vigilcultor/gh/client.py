@@ -126,6 +126,10 @@ class InstallationClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token_provider()}"}
 
+    def token(self) -> str:
+        """Current installation access token (for git over https)."""
+        return self._token_provider()
+
     def get_repo(self, full_name: str) -> dict:
         response = self._client.get(f"/repos/{full_name}", headers=self._headers())
         response.raise_for_status()
@@ -158,6 +162,14 @@ class InstallationClient:
         )
         response.raise_for_status()
         return response.json().get("permission", "none")
+
+    def list_labels(self, full_name: str) -> list[str]:
+        """Repository label names."""
+        response = self._client.get(
+            f"/repos/{full_name}/labels", params={"per_page": 100}, headers=self._headers()
+        )
+        response.raise_for_status()
+        return [row["name"] for row in response.json()]
 
     def list_issue_events(self, full_name: str, issue_number: int) -> list[dict]:
         """Issue timeline events (labeled/unlabeled/…), newest last."""

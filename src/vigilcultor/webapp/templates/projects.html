@@ -34,8 +34,11 @@
         <td style="padding:8px 10px">{{ p.account }}</td>
         <td style="padding:8px 10px">{{ p.state }}</td>
         {% if can_manage %}
-        <td style="padding:8px 10px;display:flex;gap:8px">
+        <td style="padding:8px 10px;display:flex;gap:8px;flex-wrap:wrap">
           {% if p.state == 'active' %}
+          <form method="post" action="/projects/{{ p.id }}/onboard">
+            <button class="ghost" style="margin:0;padding:4px 10px">{{ t('projects.onboard', lang) }}</button>
+          </form>
           <form method="post" action="/projects/{{ p.id }}/state">
             <input type="hidden" name="state" value="paused">
             <button class="ghost" style="margin:0;padding:4px 10px">{{ t('projects.pause', lang) }}</button>
