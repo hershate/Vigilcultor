@@ -44,11 +44,16 @@ def main(argv: list[str] | None = None) -> int:
 
         from vigilcultor.config import data_dir
         from vigilcultor.netproxy.defaults import effective_allowlist
-        from vigilcultor.netproxy.server import EgressProxyServer
+        from vigilcultor.netproxy.endpoint import announce
+        from vigilcultor.netproxy.server import EgressProxyServer, default_bind_host
 
-        proxy = EgressProxyServer(effective_allowlist(), data_dir() / "netproxy.jsonl")
+        bind = default_bind_host()
+        proxy = EgressProxyServer(
+            effective_allowlist(), data_dir() / "netproxy.jsonl", bind_host=bind
+        )
         proxy.start()
-        print(f"netproxy listening on 127.0.0.1:{proxy.port}")
+        announce(bind, proxy.port)
+        print(f"netproxy listening on {proxy.proxy_url}")
         try:
             while True:
                 time.sleep(3600)
@@ -63,13 +68,18 @@ def main(argv: list[str] | None = None) -> int:
 
         from vigilcultor.config import data_dir
         from vigilcultor.netproxy.defaults import effective_allowlist
-        from vigilcultor.netproxy.server import EgressProxyServer
+        from vigilcultor.netproxy.endpoint import announce
+        from vigilcultor.netproxy.server import EgressProxyServer, default_bind_host
         from vigilcultor.scheduler.loop import run_loop
         from vigilcultor.webapp.app import create_app
 
-        proxy = EgressProxyServer(effective_allowlist(), data_dir() / "netproxy.jsonl")
+        bind = default_bind_host()
+        proxy = EgressProxyServer(
+            effective_allowlist(), data_dir() / "netproxy.jsonl", bind_host=bind
+        )
         proxy.start()
-        print(f"netproxy on 127.0.0.1:{proxy.port}")
+        announce(bind, proxy.port)
+        print(f"netproxy on {proxy.proxy_url}")
         threading.Thread(target=run_loop, daemon=True).start()
         try:
             uvicorn.run(create_app(), host="127.0.0.1", port=8000)

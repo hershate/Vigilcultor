@@ -95,3 +95,25 @@ def test_connect_denied_for_blocked_host(tmp_path, proxy):
     assert b"403" in data
     audit = read_audit(tmp_path)
     assert any(entry["method"] == "CONNECT" and not entry["allowed"] for entry in audit)
+
+
+def test_bind_host_exposed(tmp_path):
+    from vigilcultor.netproxy.server import EgressProxyServer
+
+    server = EgressProxyServer(["example.com"], tmp_path / "a.jsonl", bind_host="127.0.0.1")
+    server.start()
+    try:
+        assert server.bind_host == "127.0.0.1"
+        assert server.proxy_url == f"http://127.0.0.1:{server.port}"
+    finally:
+        server.stop()
+
+
+def test_default_bind_host_falls_back(monkeypatch):
+    from vigilcultor.netproxy import server as srv
+
+    def boom(*args, **kwargs):
+        raise FileNotFoundError("no podman")
+
+    monkeypatch.setattr(srv.subprocess, "run", boom)
+    assert srv.default_bind_host() == "127.0.0.1"

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import socketserver
+import subprocess
 import threading
 import time
 from collections.abc import Iterable
@@ -14,6 +16,35 @@ from urllib.parse import urlsplit
 DEFAULT_DENY_MESSAGE = b"HTTP/1.1 403 Forbidden by egress policy\r\nContent-Length: 0\r\n\r\n"
 TUNNEL_BUFFER = 65536
 TUNNEL_TIMEOUT = 300
+
+
+def default_bind_host() -> str:
+    """Bind to the host's default-route address so containers reach the proxy.
+
+    Rootless podman (pasta) maps the container-side gateway address to the
+    host's default-route source address, not to loopback — a loopback-bound
+    proxy is unreachable from containers. Fall back to loopback when the
+    address cannot be discovered or bound.
+    """
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed argv
+            ["ip", "route", "get", "1.1.1.1"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except Exception:  # noqa: BLE001 - no iproute2 or no default route
+        return "127.0.0.1"
+    match = re.search(r"\bsrc ([0-9.]+)\b", proc.stdout)
+    if match is None:
+        return "127.0.0.1"
+    try:
+        with socket.socket() as probe:
+            probe.bind((match.group(1), 0))
+    except OSError:
+        return "127.0.0.1"
+    return match.group(1)
 
 
 def host_allowed(host: str, allowlist: Iterable[str]) -> bool:
@@ -173,20 +204,31 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
 
 
 class EgressProxyServer:
-    def __init__(self, allowlist: list[str], audit_path: Path) -> None:
+    def __init__(
+        self, allowlist: list[str], audit_path: Path, *, bind_host: str = "127.0.0.1"
+    ) -> None:
         audit = AuditLog(audit_path)
         handler = type(
             "BoundHandler",
             (_ProxyHandler,),
             {"allowlist": list(allowlist), "audit": audit},
         )
-        self._server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler)
+        self._bind_host = bind_host
+        self._server = socketserver.ThreadingTCPServer((bind_host, 0), handler)
         self._server.daemon_threads = True
         self._thread: threading.Thread | None = None
 
     @property
+    def bind_host(self) -> str:
+        return self._bind_host
+
+    @property
     def port(self) -> int:
         return self._server.server_address[1]
+
+    @property
+    def proxy_url(self) -> str:
+        return f"http://{self._bind_host}:{self.port}"
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
