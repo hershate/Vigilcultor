@@ -257,6 +257,25 @@ class InstallationClient:
         response.raise_for_status()
         return response.json().get("check_runs", [])
 
+    def mark_pull_request_draft(self, repo_id: int, pull_request_id: str) -> bool:
+        """GraphQL 将 PR 置为草稿（REST 不支持建草稿 PR）。node_id 形 id。"""
+        query = """
+        mutation($id: ID!) {
+          convertPullRequestToDraft(input: {pullRequestId: $id}) {
+            pullRequest { isDraft }
+          }
+        }
+        """
+        response = self._client.post(
+            "/graphql",
+            json={"query": query, "variables": {"id": pull_request_id}},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+        converted = data.get("convertPullRequestToDraft") or {}
+        return bool(converted.get("pullRequest", {}).get("isDraft"))
+
 
 class CachedInstallationToken:
     """Thread-safe installation token with renewal margin."""

@@ -330,3 +330,11 @@ def test_finish_does_not_overwrite_cancelled(tmp_env, monkeypatch):
         session.commit()
     runner._finish(run, task_id, "completed")
     assert _task_state(task_id) == "cancelled"
+
+
+def test_pr_body_contains_four_elements():
+    body = runner._pr_body("改动说明", None, 7, "pr_note")
+    assert "改动摘要" in body and "测试结果" in body
+    assert "Closes #7" in body and "AI 自动生成" in body
+    no_attr = runner._pr_body("改动说明", None, 7, "none")
+    assert "AI 自动生成" not in no_attr

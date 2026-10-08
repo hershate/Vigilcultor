@@ -154,6 +154,8 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
         issue_number, profile_json = task.issue_number, project.env_profile_json
         budget_usd = task.budget_usd / 100
         pr_number = task.pr_number
+        pr_mode = project.pr_mode or "ready"
+        attribution = project.attribution or "pr_note"
     run = _new_run(task_id)
 
     client = service.installation_client_for(installation_id)
@@ -224,6 +226,7 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
         proxy=container_proxy_url(),
     )
     podman.rm(f"vgc-task-{task_id}")
+    _dump_stream(task_id, run.iter_no, agent_result.stdout)
     outcome = driver.parse_stream(agent_result.stdout)
     driver.fill_usage_from_result(outcome, agent_result.stdout)
     run.agent_session_id = outcome.session_id
@@ -258,9 +261,14 @@ def run_task(task_id: int, *, podman: Podman | None = None) -> None:
     pr = client.create_pull_request(
         full_name,
         title=f"自动维护：处理 #{issue_number}",
-        body=outcome.final_text[:6000] or "（处理摘要见 issue 评论）",
+        body=_pr_body(outcome.final_text, profile_json, issue_number, attribution),
         head=branch, base=base,
     )
+    if pr_mode == "draft" and pr.get("node_id"):
+        try:
+            client.mark_pull_request_draft(pr.get("repository", {}).get("id", 0), pr["node_id"])
+        except Exception:  # noqa: BLE001 - 草稿化失败不阻塞主流程
+            logger.warning("mark draft failed for task #%s", task_id)
     run.pr_url = pr.get("html_url")
     _comment(
         client, full_name, issue_number,
@@ -425,6 +433,34 @@ def _set_task_state(task_id: int, state: str, error: str | None) -> None:
             task.state = state
             task.error = error
             session.commit()
+
+
+def _pr_body(summary: str, profile_json: str | None, issue_number: int,
+             attribution: str) -> str:
+    """PR 描述四要素：改动摘要 / 测试结果 / 关联 issue / AI 声明。"""
+    gates = [kind for kind, _ in gate_commands(profile_json)] or ["（项目未配置门禁）"]
+    parts = [
+        "## 改动摘要",
+        (summary or "（见 issue 评论）")[:6000],
+        "",
+        "## 测试结果",
+        f"门禁通过：{', '.join(gates)}",
+        "",
+        "## 关联 issue",
+        f"Closes #{issue_number}",
+    ]
+    if attribution != "none":
+        parts += ["", "## 声明", "本拉取请求由 Vigilcultor 托管的 AI 自动生成。"]
+    return "\n".join(parts)
+
+
+def _dump_stream(task_id: int, iter_no: int, stdout: str) -> None:
+    """全量执行器输出落盘（完整对话审计；面板日志尾部另有库内副本）。"""
+    from vigilcultor.config import data_dir
+
+    log_dir = data_dir() / "logs" / f"task-{task_id}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / f"iter-{iter_no}.jsonl").write_text(stdout, encoding="utf-8")
 
 
 def _comment(client, full_name: str, issue_number: int, body: str) -> None:
