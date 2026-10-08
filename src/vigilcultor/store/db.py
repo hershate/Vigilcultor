@@ -51,7 +51,13 @@ def reset_cache() -> None:
 
 
 def init_db() -> None:
-    """Create all tables (M1 bootstrap; Alembic migrations arrive with M2)."""
-    from vigilcultor.store import models
+    """Bring the database up to the latest migration (Alembic)."""
+    from alembic import command
+    from alembic.config import Config
 
-    models.Base.metadata.create_all(get_engine())
+    from vigilcultor.store import models  # noqa: F401  (register metadata)
+
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations"
+    config = Config()
+    config.set_main_option("script_location", str(migrations_dir))
+    command.upgrade(config, "head")
