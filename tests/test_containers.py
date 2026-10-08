@@ -53,16 +53,42 @@ class TestProfile:
 
 
 class TestImagegen:
-    def test_containerfile_layout(self):
+    def test_python_pyproject_build_time_is_toolchain_only(self):
+        from vigilcultor.containers.imagegen import runtime_setup
+
         profile = detect_profile(
             ["pyproject.toml"], read_file=lambda name: "pytest"
         )
         assert profile is not None
-        text = generate_containerfile(profile)
+        text = generate_containerfile(profile, ["pyproject.toml", "main.py"])
         assert text.startswith("FROM docker.io/library/python")
         assert "WORKDIR /workspace" in text
-        assert "RUN pip install -e ." in text
-        assert text.endswith("\n")
+        assert "RUN pip install -e ." not in text  # editable install is run-time
+        setup = runtime_setup(profile, ["pyproject.toml"])
+        assert setup is not None
+        assert "pip install --no-cache-dir -e ." in setup
+        assert "pip install --no-cache-dir pytest" in setup
+
+    def test_python_requirements_baked_at_build(self):
+        from vigilcultor.containers.imagegen import runtime_setup
+
+        profile = detect_profile(["requirements.txt", "app.py"])
+        assert profile is not None
+        text = generate_containerfile(profile, ["requirements.txt", "app.py"])
+        assert "COPY requirements.txt ." in text
+        assert "RUN pip install --no-cache-dir -r requirements.txt" in text
+        assert runtime_setup(profile, ["requirements.txt"]) is None
+
+    def test_node_manifests_baked(self):
+        profile = detect_profile(
+            ["package.json"], read_file=lambda name: '{"scripts": {"test": "x"}}'
+        )
+        assert profile is not None
+        text = generate_containerfile(
+            profile, ["package.json", "package-lock.json", "src/a.js"]
+        )
+        assert "COPY package.json package-lock.json* ./" in text
+        assert "npm install --ignore-scripts" in text
 
     def test_tag_slug(self):
         assert container_tag("acme/Alpha_Beta") == "vgc-acme-alpha-beta"

@@ -20,7 +20,11 @@ from pathlib import Path
 from sqlalchemy import select
 
 from vigilcultor.config import data_dir
-from vigilcultor.containers.imagegen import container_tag, generate_containerfile
+from vigilcultor.containers.imagegen import (
+    container_tag,
+    generate_containerfile,
+    runtime_setup,
+)
 from vigilcultor.containers.podman import Podman
 from vigilcultor.containers.profile import EnvProfile, detect_profile
 from vigilcultor.store.db import get_session_maker
@@ -115,8 +119,8 @@ def onboard_project(
         return report
     report.language = profile.language
 
-    # 3) image build verification
-    containerfile = generate_containerfile(profile)
+    # 3) image build verification (manifest-only dependencies at build time)
+    containerfile = generate_containerfile(profile, files)
     (dest / "Containerfile").write_text(containerfile, encoding="utf-8")
     tag = container_tag(full_name)
     build = podman.build(tag, str(dest))
@@ -127,13 +131,15 @@ def onboard_project(
         _persist_profile(project_id, profile, report)
         return report
 
-    # 4) baseline: build & test commands inside the project image
+    # 4) baseline: runtime setup + build/test commands inside the project image
+    setup = runtime_setup(profile, files)
     for kind, command in (("build", profile.build_command), ("test", profile.test_command)):
         if not command:
             report.baseline[kind] = "skipped"
             continue
+        full_command = f"{setup} && {command}" if setup else command
         result = podman.run(
-            f"vgc-onboard-{project_id}", tag, ["sh", "-c", command],
+            f"vgc-onboard-{project_id}", tag, ["sh", "-c", full_command],
             volumes={str(dest): "/workspace"}, workdir="/workspace",
         )
         podman.rm(f"vgc-onboard-{project_id}")

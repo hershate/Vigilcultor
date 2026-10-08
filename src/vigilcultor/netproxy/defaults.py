@@ -30,7 +30,10 @@ DEFAULT_ALLOWLIST: tuple[str, ...] = (
 
 
 def effective_allowlist() -> list[str]:
-    configured = kv_get(ALLOWLIST_KV_KEY)
+    try:
+        configured = kv_get(ALLOWLIST_KV_KEY)
+    except Exception:  # noqa: BLE001 - uninitialized database falls back to defaults
+        configured = None
     if isinstance(configured, list) and configured:
         return [str(host) for host in configured]
     return list(DEFAULT_ALLOWLIST)
