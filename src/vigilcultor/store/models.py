@@ -122,6 +122,7 @@ class Task(Base):
     budget_usd: Mapped[int] = mapped_column(Integer, default=0)
     spent_usd: Mapped[int] = mapped_column(Integer, default=0)
     preserved_branch: Mapped[str | None] = mapped_column(String(256), default=None)
+    pr_number: Mapped[int | None] = mapped_column(Integer, default=None)
     error: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -142,3 +143,22 @@ class EventRecord(Base):
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     received_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TaskRun(Base):
+    """One agent execution iteration of a task (M5 adds further iterations)."""
+
+    __tablename__ = "task_runs"
+    __table_args__ = (Index("ix_task_runs_task", "task_id", "iter_no"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    iter_no: Mapped[int] = mapped_column(Integer, default=1)
+    agent_session_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    exit_status: Mapped[str] = mapped_column(String(16), default="running")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    pr_url: Mapped[str | None] = mapped_column(String(512), default=None)
+    log_tail: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)

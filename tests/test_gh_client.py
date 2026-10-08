@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import jwt as pyjwt
 import pytest
@@ -140,3 +142,34 @@ def test_cached_token_renews(private_key_pem):
     assert cached.get() == "ghs_1"
     assert cached.get() == "ghs_1"  # cached, no second call
     assert len(calls) == 1
+
+
+def test_issue_pr_comment_endpoints():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/repos/acme/alpha/issues/5" and request.method == "GET":
+            return httpx.Response(200, json={"number": 5, "title": "T", "body": "B"})
+        if request.url.path == "/repos/acme/alpha/pulls" and request.method == "POST":
+            body = json.loads(request.content)
+            return httpx.Response(
+                201,
+                json={
+                    "html_url": "https://github.com/acme/alpha/pull/9",
+                    "head": body["head"],
+                },
+            )
+        if request.url.path == "/repos/acme/alpha/issues/5/comments" and request.method == "POST":
+            return httpx.Response(201, json={"id": 1})
+        return httpx.Response(404)
+
+    client = InstallationClient(
+        lambda: "ghs_x",
+        transport=httpx.MockTransport(handler),
+        base_url="https://api.test",
+    )
+    issue = client.get_issue("acme/alpha", 5)
+    assert issue["title"] == "T"
+    pr = client.create_pull_request(
+        "acme/alpha", title="t", body="b", head="vgc/task-1", base="main"
+    )
+    assert pr["html_url"].endswith("/pull/9") and pr["head"] == "vgc/task-1"
+    assert client.create_issue_comment("acme/alpha", 5, "done") == {"id": 1}

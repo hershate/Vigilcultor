@@ -194,6 +194,88 @@ class InstallationClient:
         rows = response.json()
         return [row for row in rows if "pull_request" not in row]
 
+    def get_issue(self, full_name: str, issue_number: int) -> dict:
+        response = self._client.get(
+            f"/repos/{full_name}/issues/{issue_number}", headers=self._headers()
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_pull_request(
+        self, full_name: str, *, title: str, body: str, head: str, base: str
+    ) -> dict:
+        response = self._client.post(
+            f"/repos/{full_name}/pulls",
+            json={"title": title, "body": body, "head": head, "base": base},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_issue_comment(self, full_name: str, issue_number: int, body: str) -> dict:
+        response = self._client.post(
+            f"/repos/{full_name}/issues/{issue_number}/comments",
+            json={"body": body},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_pull_request(self, full_name: str, pr_number: int) -> dict:
+        response = self._client.get(
+            f"/repos/{full_name}/pulls/{pr_number}", headers=self._headers()
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_pr_comments(self, full_name: str, pr_number: int) -> list[dict]:
+        """PR 会话区评论（issue comments API 同源）。"""
+        response = self._client.get(
+            f"/repos/{full_name}/issues/{pr_number}/comments",
+            params={"per_page": 100},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_pr_reviews(self, full_name: str, pr_number: int) -> list[dict]:
+        response = self._client.get(
+            f"/repos/{full_name}/pulls/{pr_number}/reviews",
+            params={"per_page": 100},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_check_runs(self, full_name: str, ref: str) -> list[dict]:
+        """某 ref（分支或 sha）的检查运行（CI 结论）。"""
+        response = self._client.get(
+            f"/repos/{full_name}/commits/{ref}/check-runs",
+            params={"per_page": 100},
+            headers={**self._headers(), "Accept": "application/vnd.github+json"},
+        )
+        response.raise_for_status()
+        return response.json().get("check_runs", [])
+
+    def mark_pull_request_draft(self, repo_id: int, pull_request_id: str) -> bool:
+        """GraphQL 将 PR 置为草稿（REST 不支持建草稿 PR）。node_id 形 id。"""
+        query = """
+        mutation($id: ID!) {
+          convertPullRequestToDraft(input: {pullRequestId: $id}) {
+            pullRequest { isDraft }
+          }
+        }
+        """
+        response = self._client.post(
+            "/graphql",
+            json={"query": query, "variables": {"id": pull_request_id}},
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+        converted = data.get("convertPullRequestToDraft") or {}
+        return bool(converted.get("pullRequest", {}).get("isDraft"))
+
 
 class CachedInstallationToken:
     """Thread-safe installation token with renewal margin."""
