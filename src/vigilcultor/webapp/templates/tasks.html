@@ -13,6 +13,7 @@
         <th style="padding:10px 12px">{{ t('tasks.label', lang) }}</th>
         <th style="padding:10px 12px">{{ t('tasks.action', lang) }}</th>
         <th style="padding:10px 12px">{{ t('tasks.state', lang) }}</th>
+        <th style="padding:10px 12px">{{ t('tasks.run_info', lang) }}</th>
         <th style="padding:10px 12px">{{ t('tasks.priority', lang) }}</th>
         <th style="padding:10px 12px">{{ t('tasks.budget', lang) }}</th>
         <th style="padding:10px 12px">{{ t('logs.time', lang) }}</th>
@@ -26,13 +27,19 @@
         <td style="padding:8px 12px">#{{ task.issue }}</td>
         <td style="padding:8px 12px">{{ task.label }}</td>
         <td style="padding:8px 12px">{{ task.action }}</td>
-        <td style="padding:8px 12px">{{ task.state }}</td>
+        <td style="padding:8px 12px">{{ task.state }}{% if task.error %}<br><span class="error" style="font-size:11px">{{ task.error[:80] }}</span>{% endif %}</td>
+        <td style="padding:8px 12px">
+          {% if task.run_state %}
+            {{ task.run_state }} · {{ task.tokens[0] }}/{{ task.tokens[1] }} tok
+            {% if task.pr_url %}<br><a href="{{ task.pr_url }}" target="_blank">PR →</a>{% endif %}
+          {% else %}—{% endif %}
+        </td>
         <td style="padding:8px 12px">{{ task.priority }}</td>
         <td style="padding:8px 12px">${{ '%.2f' % task.budget_usd }}</td>
         <td style="padding:8px 12px">{{ task.created_at.strftime('%m-%d %H:%M') if task.created_at else '' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">{{ t('tasks.none', lang) }}</td></tr>
+      <tr><td colspan="10" style="padding:24px;text-align:center;color:var(--muted)">{{ t('tasks.none', lang) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

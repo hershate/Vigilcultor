@@ -1,7 +1,8 @@
-"""Settings page: vault status, GitHub App credentials, connection test."""
+"""Settings page: vault status, GitHub App credentials, agent executor/provider."""
 
 from __future__ import annotations
 
+import json
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -34,6 +35,12 @@ def _flash(message: str, **params: str) -> RedirectResponse:
 @router.get("/settings")
 def settings_page(request: Request, user: User = Depends(viewer_required)):
     creds = _credentials()
+    from vigilcultor.agent.executor import find_executor, verify_executor
+    from vigilcultor.orchestrator.runner import load_provider
+
+    executor_path = find_executor()
+    executor_ok, executor_reason = verify_executor()
+    provider = load_provider()
     return render(
         request,
         "settings.html",
@@ -49,8 +56,48 @@ def settings_page(request: Request, user: User = Depends(viewer_required)):
             "app_id": creds.app_id if creds else None,
             "has_credentials": creds is not None,
             "webhook_url": str(request.base_url).rstrip("/") + "/webhook/github",
+            "executor_path": str(executor_path) if executor_path else None,
+            "executor_ok": executor_ok,
+            "executor_reason": executor_reason,
+            "provider_base_url": (provider or {}).get("base_url"),
+            "provider_model": (provider or {}).get("model"),
+            "provider_configured": provider is not None,
         },
     )
+
+
+@router.post("/settings/agent-provider")
+def save_agent_provider(
+    request: Request,
+    user: User = Depends(admin_required),
+    base_url: str = Form(...),
+    auth_token: str = Form(""),
+    api_key: str = Form(""),
+    model: str = Form(""),
+):
+    base_url = base_url.strip()
+    auth_token = auth_token.strip()
+    api_key = api_key.strip()
+    model = model.strip()
+    if not base_url:
+        return _flash("settings.provider_invalid")
+    if not auth_token and not api_key:
+        return _flash("settings.provider_invalid")
+    if not vault.is_configured() or not vault.is_unlocked():
+        return _flash("settings.vault_locked_hint")
+    config = {"base_url": base_url, "model": model or None}
+    if auth_token:
+        config["auth_token"] = auth_token
+    if api_key:
+        config["api_key"] = api_key
+    try:
+        blob = vault.encrypt(json.dumps(config, ensure_ascii=False))
+    except vault.VaultError:
+        return _flash("settings.vault_locked_hint")
+    from vigilcultor.store.kv import kv_set
+
+    kv_set("agent:provider", blob)
+    return _flash("settings.saved")
 
 
 @router.post("/settings/app-credentials")

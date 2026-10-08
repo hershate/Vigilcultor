@@ -118,3 +118,40 @@ def test_viewer_cannot_manage(tmp_env):
     )
     assert response.status_code == 403
     assert client.get("/vault").status_code == 403
+
+
+def test_agent_provider_saved_encrypted_and_shown(tmp_env):
+    from vigilcultor.store.kv import kv_get
+
+    client = make_client(tmp_env)
+    saved = client.post(
+        "/settings/agent-provider",
+        data={
+            "base_url": "https://api.example.com",
+            "auth_token": "tok-1",
+            "api_key": "",
+            "model": "glm-x",
+        },
+    )
+    assert saved.status_code == 303
+    assert "settings.saved" in saved.headers["location"]
+    blob = kv_get("agent:provider")
+    assert isinstance(blob, str) and "tok-1" not in blob  # 密文存储
+
+    page = client.get("/settings")
+    assert page.status_code == 200
+    assert "https://api.example.com" in page.text
+
+    from vigilcultor.orchestrator.runner import load_provider
+
+    provider = load_provider()
+    assert provider["auth_token"] == "tok-1" and provider["model"] == "glm-x"
+
+
+def test_agent_provider_requires_credential(tmp_env):
+    client = make_client(tmp_env)
+    bad = client.post(
+        "/settings/agent-provider", data={"base_url": "https://api.example.com"}
+    )
+    assert bad.status_code == 303
+    assert "provider_invalid" in bad.headers["location"]

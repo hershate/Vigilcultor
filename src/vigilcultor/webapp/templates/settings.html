@@ -51,4 +51,38 @@
   </form>
   {% endif %}
 </div>
+
+<div class="card">
+  <h2>{{ t('settings.agent_section', lang) }}</h2>
+  <p>{{ t('settings.executor_status', lang) }}：
+    {% if executor_ok %}
+      <span class="ok">{{ executor_reason }}</span>
+    {% elif executor_path %}
+      <span class="error">{{ executor_reason }}</span>（{{ executor_path }}）
+    {% else %}
+      <span class="error">{{ t('settings.executor_missing', lang) }}</span>
+    {% endif %}
+  </p>
+  <p>{{ t('settings.provider_status', lang) }}：
+    {% if provider_configured %}
+      <span class="ok">{{ provider_base_url }}{% if provider_model %} · {{ provider_model }}{% endif %}</span>
+    {% else %}
+      <span class="error">{{ t('settings.provider_missing', lang) }}</span>
+    {% endif %}
+  </p>
+
+  {% if user.role == 'admin' %}
+  {% if not vault_unlocked %}<p class="error">{{ t('settings.vault_locked_hint', lang) }}</p>{% endif %}
+  <form method="post" action="/settings/agent-provider">
+    <label>{{ t('settings.provider_base_url', lang) }}</label>
+    <input name="base_url" required placeholder="https://api.example.com" value="{{ provider_base_url or '' }}">
+    <label>{{ t('settings.provider_auth_token', lang) }} / {{ t('settings.provider_api_key', lang) }}</label>
+    <input name="auth_token" placeholder="Bearer Token" autocomplete="off">
+    <input name="api_key" placeholder="API Key" autocomplete="off">
+    <label>{{ t('settings.provider_model', lang) }}</label>
+    <input name="model" value="{{ provider_model or '' }}">
+    <button>{{ t('settings.save', lang) }}</button>
+  </form>
+  {% endif %}
+</div>
 {% endblock %}
