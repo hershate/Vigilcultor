@@ -97,3 +97,21 @@ uv run vigilcultor brand-check   # 品牌用语扫描
 ## 许可
 
 Apache-2.0
+
+## 声明
+本项目已经停更，请大家使用https://github.com/deepseek-ai/dsh-superagent-prototype
+deepseek的superagent应该会比我做得更好
+我也是一个比较懈怠的人吧，很多事情做了但是也做不好，也不是非常有毅力和决心的人
+这个项目将会归档，我相信deepseek会做的更好
+再次感谢所有关注并支持过本项目的人，
+同时也道个歉，我是一个比较懒的vibe coder
+很多事情也确实做的不好
+希望大家能原谅我
+
+在这里顺便解释一下Vigilcultor这个名字的含义吧
+这个词由Vigil+Cultor构成
+Vigil-（不眠守望）
+-cultor（培育照料）
+
+另外再次声明，本项目与https://github.com/deepseek-ai/dsh-superagent-prototype无关
+本项目为本人使用AI开发，与其他任何团体和个人无关
